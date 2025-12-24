@@ -1,0 +1,10 @@
+{
+  "app": "python3 app.py",
+  "context": {
+    "region": "ap-northeast-2",
+    "domain_name": "proxy.example.com",
+    "repository_url": "https://github.com/your-org/your-repo",
+    "branch": "main",
+    "github_token_secret": "github-token"
+  }
+}
