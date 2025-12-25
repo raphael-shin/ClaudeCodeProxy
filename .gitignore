@@ -29,6 +29,7 @@ pnpm-debug.log*
 .next/
 out/
 dist/
+dist.zip
 build/
 .cache/
 .turbo/

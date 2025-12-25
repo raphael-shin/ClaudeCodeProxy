@@ -75,7 +75,6 @@ async def revoke_access_key(
 
     invalidate_access_key_cache(key.key_hash)
     invalidate_bedrock_key_cache(key_id)
-    invalidate_access_key_cache(access_key.key_hash)
 
 
 @router.post("/access-keys/{key_id}/rotate", response_model=AccessKeyResponse)

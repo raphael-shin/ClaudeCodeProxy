@@ -26,6 +26,68 @@ Claude Code will send requests to the proxy automatically.
 - Register Bedrock keys for fallback.
 - View usage by time range and timezone, with global totals and per-user drilldown.
 
+## Local frontend testing (Vite)
+1) Create `frontend/.env.local`:
+   - `VITE_BACKEND_API_URL=http://localhost:8000`
+2) Install dependencies:
+   - `cd frontend`
+   - `npm ci`
+3) Start dev server:
+   - `npm run dev`
+4) Open the app:
+   - `http://localhost:5173`
+5) If you change `.env.local`, restart the dev server to pick up new values.
+
+## Frontend deployment (Amplify)
+
+### Option A: CLI 스크립트 (권장)
+
+하나의 스크립트로 첫 배포와 업데이트 배포를 자동 처리합니다.
+
+Prerequisites:
+- AWS CLI 설치 및 인증 설정 (`aws configure`)
+- `frontend/.env.production`에 `VITE_BACKEND_API_URL` 설정
+
+```bash
+cd frontend
+npm ci
+npm run deploy:amplify:init
+```
+
+환경변수 옵션:
+- `APP_NAME` - 앱 이름 (기본: `claude_code_proxy`)
+- `BRANCH` - 브랜치명 (기본: `main`)
+- `AWS_REGION` - 리전 (기본: `ap-northeast-2`)
+- `SKIP_BUILD=1` - 빌드 스킵 (이미 dist.zip이 있을 때)
+
+### Option B: Amplify Console 수동 업로드
+
+1) `frontend/.env.production` 설정:
+   ```
+   VITE_BACKEND_API_URL=http://<ALB_DNS_NAME>
+   ```
+2) 빌드:
+   ```bash
+   cd frontend && npm ci && npm run build:zip
+   ```
+3) Amplify Console에서 `dist.zip` 업로드 (Manual deploy)
+4) Rewrites and redirects 설정:
+   - Source: `</^[^.]+$|\.(?!(js|css|ico|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot|json|map)$)([^.]+$)/>`
+   - Target: `/index.html`
+   - Type: `200 (Rewrite)`
+
+### Option C: Git 연동
+
+Amplify CLI로 GitHub 연동 후 자동 배포:
+```bash
+cd frontend
+amplify init
+amplify hosting add  # GitHub 선택
+amplify publish
+```
+
+Amplify Console에서 환경변수 `VITE_BACKEND_API_URL` 설정 필요.
+
 ## Operator runbook (quick)
 1) Configure backend env vars in `backend/.env`:
    - Required: `PROXY_DATABASE_URL`, `PROXY_KEY_HASHER_SECRET`, `PROXY_JWT_SECRET`,
@@ -36,7 +98,7 @@ Claude Code will send requests to the proxy automatically.
    - `cd backend && alembic upgrade head`
 3) Start services:
    - Backend: `uvicorn src.main:app --reload --port 8000`
-   - Frontend: `cd ../frontend && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`
+   - Frontend: `cd ../frontend && npm run dev` (use `frontend/.env.local` for `VITE_BACKEND_API_URL`)
 4) Verify health: `curl http://localhost:8000/health`
 5) Admin workflow:
    - Login in `/login`, create users, issue access keys, register Bedrock keys.

@@ -21,6 +21,7 @@ compute = ComputeStack(
     app,
     "ComputeStack",
     vpc=network.vpc,
+    alb_sg=network.alb_sg,
     ecs_sg=network.ecs_sg,
     db_secret=database.db_secret,
     kms_key=secrets.kms_key,

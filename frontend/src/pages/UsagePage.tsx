@@ -1,7 +1,5 @@
-'use client';
-
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { api, UsageResponse, UsageTopUser, User } from '@/lib/api';
 import {
   AreaChart,
@@ -40,7 +38,8 @@ export default function UsagePage() {
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [timezone, setTimezone] = useState('Asia/Seoul');
 
-  const timezoneOption = TIMEZONE_OPTIONS.find((option) => option.value === timezone) || TIMEZONE_OPTIONS[1];
+  const timezoneOption =
+    TIMEZONE_OPTIONS.find((option) => option.value === timezone) || TIMEZONE_OPTIONS[1];
 
   const range = useMemo(() => {
     if (rangePreset !== 'custom') {
@@ -119,9 +118,7 @@ export default function UsagePage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Usage Dashboard</h1>
-          <p className="text-gray-500 text-sm">
-            전체 사용량 트렌드와 사용자별 분포를 한 번에 확인하세요.
-          </p>
+          <p className="text-gray-500 text-sm">전체 사용량 트렌드와 사용자별 분포를 한 번에 확인하세요.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex flex-wrap rounded-full border border-gray-200 bg-white p-1 shadow-sm">
@@ -151,7 +148,7 @@ export default function UsagePage() {
               </option>
             ))}
           </select>
-          <Link href="/users" className="text-blue-600 text-sm font-semibold">
+          <Link to="/users" className="text-blue-600 text-sm font-semibold">
             ← Back to Users
           </Link>
         </div>
@@ -173,9 +170,7 @@ export default function UsagePage() {
             onChange={(e) => setCustomRange((prev) => ({ ...prev, end: e.target.value }))}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
           />
-          <div className="text-xs text-gray-500">
-            표시 시간대: {timezoneOption.label}
-          </div>
+          <div className="text-xs text-gray-500">표시 시간대: {timezoneOption.label}</div>
         </div>
       )}
 
@@ -192,9 +187,7 @@ export default function UsagePage() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold">전체 토큰 추세</h2>
-                <div className="text-xs text-gray-500 font-semibold">
-                  Bucket: {bucketType}
-                </div>
+                <div className="text-xs text-gray-500 font-semibold">Bucket: {bucketType}</div>
               </div>
               <ResponsiveContainer width="100%" height={320}>
                 <AreaChart data={chartData}>
@@ -238,7 +231,7 @@ export default function UsagePage() {
                       />
                     </div>
                     <div className="mt-1 text-xs text-gray-500">
-                      Requests: {user.total_requests.toLocaleString()}
+                      {user.total_requests} requests
                     </div>
                   </button>
                 ))}
@@ -246,59 +239,58 @@ export default function UsagePage() {
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-lg font-bold">User Drilldown</h2>
-                <p className="text-sm text-gray-500">
-                  선택한 사용자의 상세 사용량과 추세를 확인합니다.
-                </p>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold">
+                  {selectedUser ? `${selectedUser.name} 사용자 추세` : '사용자별 토큰 추세'}
+                </h2>
+                <select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                >
+                  <option value="">All users</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <select
-                value={selectedUserId}
-                onChange={(e) => setSelectedUserId(e.target.value)}
-                className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700"
-              >
-                <option value="">Select user...</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={userChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="tokens" stroke="#2563eb" strokeWidth={2} />
+                  <Line type="monotone" dataKey="requests" stroke="#0f172a" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
 
-            {!selectedUserId && (
-              <div className="text-sm text-gray-500">사용자를 선택하면 세부 차트가 표시됩니다.</div>
-            )}
-
-            {selectedUserId && userUsage && (
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <MetricCard label="User Tokens" value={userUsage.total_tokens} />
-                  <MetricCard label="User Requests" value={userUsage.total_requests} />
-                  <MetricCard label="Input Tokens" value={userUsage.total_input_tokens} />
-                  <MetricCard label="Output Tokens" value={userUsage.total_output_tokens} />
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold mb-4">Totals</h2>
+              <div className="space-y-3 text-sm text-gray-700">
+                <div className="flex justify-between">
+                  <span>Requests</span>
+                  <span>{usage.total_requests.toLocaleString()}</span>
                 </div>
-
-                <div className="bg-slate-50 rounded-xl p-4 flex items-center justify-between">
-                  <div className="text-sm text-gray-600">
-                    Selected User: <span className="font-semibold text-gray-900">{selectedUser?.name}</span>
-                  </div>
-                  <div className="text-xs text-gray-500">Timezone: {timezoneOption.label}</div>
+                <div className="flex justify-between">
+                  <span>Total Tokens</span>
+                  <span>{usage.total_tokens.toLocaleString()}</span>
                 </div>
-
-                <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={userChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="tokens" stroke="#16a34a" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="flex justify-between">
+                  <span>Input Tokens</span>
+                  <span>{usage.total_input_tokens.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Output Tokens</span>
+                  <span>{usage.total_output_tokens.toLocaleString()}</span>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         </>
       )}
@@ -309,27 +301,28 @@ export default function UsagePage() {
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-      <p className="text-gray-500 text-sm font-semibold">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value.toLocaleString()}</p>
+      <div className="text-sm text-gray-500 font-semibold">{label}</div>
+      <div className="text-2xl font-bold mt-2">{value.toLocaleString()}</div>
     </div>
   );
 }
 
-function formatTimestamp(timestamp: string, timeZone: string) {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(timestamp));
-}
-
 function parseDateTimeLocal(value: string, offsetMinutes: number) {
   const [datePart, timePart] = value.split('T');
-  if (!datePart || !timePart) return new Date('');
+  if (!datePart || !timePart) return new Date(NaN);
   const [year, month, day] = datePart.split('-').map(Number);
   const [hour, minute] = timePart.split(':').map(Number);
-  const utcMillis = Date.UTC(year, month - 1, day, hour, minute) - offsetMinutes * 60 * 1000;
-  return new Date(utcMillis);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  return new Date(utcDate.getTime() - offsetMinutes * 60 * 1000);
+}
+
+function formatTimestamp(isoString: string, timezone: string) {
+  const date = new Date(isoString);
+  return date.toLocaleString('en-US', {
+    timeZone: timezone,
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

@@ -1,12 +1,10 @@
-'use client';
-
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { api, User, AccessKey } from '@/lib/api';
+import { useNavigate, useParams } from 'react-router-dom';
+import { api, AccessKey, User } from '@/lib/api';
 
 export default function UserDetailPage() {
   const { id } = useParams();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [keys, setKeys] = useState<AccessKey[]>([]);
   const [newKey, setNewKey] = useState<string | null>(null);
@@ -15,15 +13,14 @@ export default function UserDetailPage() {
 
   useEffect(() => {
     if (id) {
-      api.getUser(id as string).then(setUser);
-      api.getAccessKeys(id as string).then(setKeys);
+      api.getUser(id).then(setUser);
+      api.getAccessKeys(id).then(setKeys);
     }
   }, [id]);
 
   const handleIssueKey = async () => {
-    const key = await api.createAccessKey(id as string, {
-      bedrock_region: 'ap-northeast-2',
-    });
+    if (!id) return;
+    const key = await api.createAccessKey(id, { bedrock_region: 'ap-northeast-2' });
     setNewKey(key.raw_key || null);
     setKeys([key, ...keys]);
   };
@@ -43,8 +40,9 @@ export default function UserDetailPage() {
   };
 
   const handleDeactivate = async () => {
-    await api.deactivateUser(id as string);
-    router.push('/users');
+    if (!id) return;
+    await api.deactivateUser(id);
+    navigate('/users');
   };
 
   if (!user) return <div className="p-8">Loading...</div>;

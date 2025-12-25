@@ -2,6 +2,8 @@ from aws_cdk import (
     Stack,
     aws_ec2 as ec2,
     aws_ecs as ecs,
+    aws_ecs_patterns as ecs_patterns,
+    aws_elasticloadbalancingv2 as elbv2,
     aws_iam as iam,
     aws_kms as kms,
     aws_secretsmanager as secretsmanager,
@@ -16,6 +18,7 @@ class ComputeStack(Stack):
         scope: Construct,
         id: str,
         vpc: ec2.Vpc,
+        alb_sg: ec2.SecurityGroup,
         ecs_sg: ec2.SecurityGroup,
         db_secret: secretsmanager.ISecret,
         kms_key: kms.Key,
@@ -26,7 +29,10 @@ class ComputeStack(Stack):
 
         # Build container image from backend directory
         image_asset = ecr_assets.DockerImageAsset(
-            self, "BackendImage", directory="../backend"
+            self,
+            "BackendImage",
+            directory="../backend",
+            platform=ecr_assets.Platform.LINUX_ARM64,
         )
 
         # Create execution role for ECS tasks
@@ -40,39 +46,6 @@ class ComputeStack(Stack):
                 )
             ],
         )
-
-        # Create infrastructure role for Express Mode
-        infrastructure_role = iam.Role(
-            self,
-            "InfrastructureRole",
-            assumed_by=iam.ServicePrincipal("ecs.amazonaws.com"),
-        )
-
-        # Add required permissions for Express Gateway infrastructure role
-        # Using broad permissions as the managed policy is not yet available
-        infra_policy = iam.Policy(
-            self,
-            "InfrastructurePolicy",
-            statements=[
-                iam.PolicyStatement(
-                    actions=[
-                        "ec2:*",
-                        "elasticloadbalancing:*",
-                        "logs:*",
-                        "ecs:*",
-                        "ecr:*",
-                        "servicediscovery:*",
-                        "cloudwatch:*",
-                        "autoscaling:*",
-                        "application-autoscaling:*",
-                        "iam:PassRole",
-                        "iam:CreateServiceLinkedRole",
-                    ],
-                    resources=["*"],
-                )
-            ],
-        )
-        infrastructure_role.attach_inline_policy(infra_policy)
 
         # Create task role with required permissions
         task_role = iam.Role(
@@ -106,57 +79,62 @@ class ComputeStack(Stack):
         secrets.jwt_secret.grant_read(task_role)
         secrets.admin_credentials.grant_read(task_role)
 
-        # Get private subnets for network configuration
-        private_subnets = vpc.select_subnets(
+        private_subnets = ec2.SubnetSelection(
             subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
         )
 
-        # Create ECS Express Gateway Service - minimal config
-        self.express_service = ecs.CfnExpressGatewayService(
+        cluster = ecs.Cluster(self, "ProxyCluster", vpc=vpc)
+
+        load_balancer = elbv2.ApplicationLoadBalancer(
             self,
-            "ProxyExpressService",
+            "ProxyAlb",
+            vpc=vpc,
+            internet_facing=True,
+            security_group=alb_sg,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+        )
+
+        fargate_service = ecs_patterns.ApplicationLoadBalancedFargateService(
+            self,
+            "ProxyService",
+            cluster=cluster,
             service_name="claude-code-proxy",
-            execution_role_arn=execution_role.role_arn,
-            infrastructure_role_arn=infrastructure_role.role_arn,
-            task_role_arn=task_role.role_arn,
-            primary_container=ecs.CfnExpressGatewayService.ExpressGatewayContainerProperty(
-                image=image_asset.image_uri,
-                container_port=8000,
-                environment=[
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="ENVIRONMENT", value="dev"
-                    ),
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="LOG_LEVEL", value="INFO"
-                    ),
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="PROXY_KMS_KEY_ID", value=kms_key.key_id
-                    ),
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="PROXY_DATABASE_URL_ARN", value=db_secret.secret_arn
-                    ),
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="PROXY_KEY_HASHER_SECRET_ARN", value=secrets.key_hasher_secret.secret_arn
-                    ),
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="PROXY_JWT_SECRET_ARN", value=secrets.jwt_secret.secret_arn
-                    ),
-                    ecs.CfnExpressGatewayService.KeyValuePairProperty(
-                        name="PROXY_ADMIN_CREDENTIALS_ARN", value=secrets.admin_credentials.secret_arn
-                    ),
-                ],
+            load_balancer=load_balancer,
+            public_load_balancer=True,
+            open_listener=False,
+            desired_count=1,
+            assign_public_ip=False,
+            task_subnets=private_subnets,
+            security_groups=[ecs_sg],
+            runtime_platform=ecs.RuntimePlatform(
+                cpu_architecture=ecs.CpuArchitecture.ARM64,
+                operating_system_family=ecs.OperatingSystemFamily.LINUX,
             ),
-            network_configuration=ecs.CfnExpressGatewayService.ExpressGatewayServiceNetworkConfigurationProperty(
-                subnets=private_subnets.subnet_ids,
+            task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
+                image=ecs.ContainerImage.from_docker_image_asset(image_asset),
+                container_port=8000,
+                environment={
+                    "ENVIRONMENT": "dev",
+                    "LOG_LEVEL": "INFO",
+                    "PROXY_KMS_KEY_ID": kms_key.key_id,
+                    "PROXY_DATABASE_URL_ARN": db_secret.secret_arn,
+                    "PROXY_KEY_HASHER_SECRET_ARN": secrets.key_hasher_secret.secret_arn,
+                    "PROXY_JWT_SECRET_ARN": secrets.jwt_secret.secret_arn,
+                    "PROXY_ADMIN_CREDENTIALS_ARN": secrets.admin_credentials.secret_arn,
+                },
+                execution_role=execution_role,
+                task_role=task_role,
+                log_driver=ecs.LogDrivers.aws_logs(
+                    stream_prefix="claude-code-proxy"
+                ),
             ),
         )
 
-        # Ensure policy is created before the service
-        self.express_service.node.add_dependency(infra_policy)
+        fargate_service.target_group.configure_health_check(path="/health")
 
         # Store service ARN for monitoring
-        self.service_name = "ProxyExpressService"
-        self.service_arn = self.express_service.attr_service_arn
+        self.service_name = fargate_service.service.service_name
+        self.service_arn = fargate_service.service.service_arn
 
         # Export backend URL for frontend integration
-        self.backend_url = f"https://{self.express_service.attr_endpoint}"
+        self.backend_url = f"http://{fargate_service.load_balancer.load_balancer_dns_name}"

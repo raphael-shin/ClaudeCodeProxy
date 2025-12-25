@@ -1,7 +1,5 @@
-'use client';
-
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { api, User } from '@/lib/api';
 
 export default function UsersPage() {
@@ -26,8 +24,13 @@ export default function UsersPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Users</h1>
         <div className="space-x-4">
-          <Link href="/usage" className="text-blue-500">Usage Dashboard</Link>
-          <button onClick={() => setShowForm(!showForm)} className="bg-blue-500 text-white px-4 py-2 rounded">
+          <Link to="/usage" className="text-blue-500">
+            Usage Dashboard
+          </Link>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
             New User
           </button>
         </div>
@@ -42,16 +45,24 @@ export default function UsersPage() {
             onChange={(e) => setName(e.target.value)}
             className="p-2 border rounded mr-2"
           />
-          <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded">Create</button>
+          <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded">
+            Create
+          </button>
         </form>
       )}
 
       <div className="bg-white rounded shadow">
         {users.map((user) => (
-          <Link key={user.id} href={`/users/${user.id}`} className="block p-4 border-b hover:bg-gray-50">
+          <Link
+            key={user.id}
+            to={`/users/${user.id}`}
+            className="block p-4 border-b hover:bg-gray-50"
+          >
             <div className="flex justify-between">
               <span className="font-medium">{user.name}</span>
-              <span className={`text-sm ${user.status === 'active' ? 'text-green-500' : 'text-gray-500'}`}>
+              <span
+                className={`text-sm ${user.status === 'active' ? 'text-green-500' : 'text-gray-500'}`}
+              >
                 {user.status}
               </span>
             </div>

@@ -54,7 +54,7 @@ class AmplifyStack(Stack):
                                 },
                             },
                             "artifacts": {
-                                "baseDirectory": ".next",
+                                "baseDirectory": "dist",
                                 "files": ["**/*"],
                             },
                             "cache": {
@@ -65,10 +65,17 @@ class AmplifyStack(Stack):
                 ],
             }),
             environment_variables={
-                "NEXT_PUBLIC_BACKEND_API_URL": backend_url,
+                "VITE_BACKEND_API_URL": backend_url,
                 "AMPLIFY_MONOREPO_APP_ROOT": "frontend",
             },
-            platform=amplify.Platform.WEB_COMPUTE,
+            custom_rules=[
+                amplify.CustomRule(
+                    source="/<*>",
+                    target="/index.html",
+                    status=amplify.RedirectStatus.REWRITE,
+                )
+            ],
+            platform=amplify.Platform.WEB,
         )
 
         # Add branch
