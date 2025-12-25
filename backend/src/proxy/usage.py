@@ -1,14 +1,12 @@
+"""Usage recording to database."""
 import asyncio
 from datetime import datetime, timedelta
-from uuid import UUID
-
-import boto3
 
 from ..logging import get_logger
-from ..config import get_settings
 from ..repositories import TokenUsageRepository, UsageAggregateRepository
 from .context import RequestContext
 from .router import ProxyResponse
+from .metrics import CloudWatchMetricsEmitter
 
 logger = get_logger(__name__)
 
@@ -21,7 +19,6 @@ def _get_bucket_start(ts: datetime, bucket_type: str) -> datetime:
     elif bucket_type == "day":
         return ts.replace(hour=0, minute=0, second=0, microsecond=0)
     elif bucket_type == "week":
-        # Start of week (Monday)
         days_since_monday = ts.weekday()
         return (ts - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
     elif bucket_type == "month":
@@ -36,11 +33,11 @@ class UsageRecorder:
         self,
         token_usage_repo: TokenUsageRepository,
         usage_aggregate_repo: UsageAggregateRepository,
+        metrics_emitter: CloudWatchMetricsEmitter | None = None,
     ):
         self._repo = token_usage_repo
         self._agg_repo = usage_aggregate_repo
-        self._cw = boto3.client("cloudwatch", region_name=get_settings().bedrock_region)
-        self._namespace = "ClaudeCodeProxy"
+        self._metrics = metrics_emitter or CloudWatchMetricsEmitter()
 
     async def record(
         self,
@@ -63,7 +60,7 @@ class UsageRecorder:
         )
 
         # Emit metrics (fire and forget)
-        asyncio.create_task(self._emit_metrics(response, latency_ms))
+        asyncio.create_task(self._metrics.emit(response, latency_ms))
 
         # Record token usage to DB (Bedrock success only)
         if response.success and response.provider == "bedrock" and response.usage:
@@ -98,59 +95,3 @@ class UsageRecorder:
                     output_tokens=output_tokens,
                     total_tokens=total_tokens,
                 )
-
-    async def _emit_metrics(self, response: ProxyResponse, latency_ms: int) -> None:
-        try:
-            metrics = [
-                {
-                    "MetricName": "RequestCount",
-                    "Value": 1,
-                    "Unit": "Count",
-                    "Dimensions": [{"Name": "Provider", "Value": response.provider}],
-                },
-                {
-                    "MetricName": "RequestLatency",
-                    "Value": latency_ms,
-                    "Unit": "Milliseconds",
-                    "Dimensions": [{"Name": "Provider", "Value": response.provider}],
-                },
-            ]
-
-            if response.error_type:
-                metrics.append({
-                    "MetricName": "ErrorCount",
-                    "Value": 1,
-                    "Unit": "Count",
-                    "Dimensions": [
-                        {"Name": "ErrorType", "Value": response.error_type},
-                        {"Name": "Provider", "Value": response.provider},
-                    ],
-                })
-
-            if response.is_fallback:
-                metrics.append({
-                    "MetricName": "FallbackCount",
-                    "Value": 1,
-                    "Unit": "Count",
-                    "Dimensions": [],
-                })
-
-            if response.usage and response.provider == "bedrock":
-                metrics.extend([
-                    {
-                        "MetricName": "BedrockTokensUsed",
-                        "Value": response.usage.input_tokens,
-                        "Unit": "Count",
-                        "Dimensions": [{"Name": "TokenType", "Value": "input"}],
-                    },
-                    {
-                        "MetricName": "BedrockTokensUsed",
-                        "Value": response.usage.output_tokens,
-                        "Unit": "Count",
-                        "Dimensions": [{"Name": "TokenType", "Value": "output"}],
-                    },
-                ])
-
-            self._cw.put_metric_data(Namespace=self._namespace, MetricData=metrics)
-        except Exception as e:
-            logger.warning("metrics_emission_failed", error=str(e))

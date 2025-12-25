@@ -16,6 +16,16 @@ from .adapter_base import AdapterResponse, AdapterError
 
 logger = get_logger(__name__)
 
+
+def _handle_request_error(e: Exception, url: str) -> AdapterError:
+    """Convert httpx exceptions to AdapterError."""
+    if isinstance(e, httpx.TimeoutException):
+        logger.info("plan_request", url=url, status_code=504, error="timeout")
+        return AdapterError(ErrorType.TIMEOUT, 504, "Request timeout", True)
+    logger.info("plan_request", url=url, status_code=503, error=str(e))
+    return AdapterError(ErrorType.NETWORK_ERROR, 503, str(e), True)
+
+
 class PlanAdapter:
     """Anthropic Plan API adapter."""
 
@@ -111,22 +121,8 @@ class PlanAdapter:
 
             return self._classify_error(response.status_code, response.text)
 
-        except httpx.TimeoutException:
-            logger.info("plan_request", url=url, status_code=504, error="timeout")
-            return AdapterError(
-                error_type=ErrorType.TIMEOUT,
-                status_code=504,
-                message="Request timeout",
-                retryable=True,
-            )
-        except httpx.RequestError as e:
-            logger.info("plan_request", url=url, status_code=503, error=str(e))
-            return AdapterError(
-                error_type=ErrorType.NETWORK_ERROR,
-                status_code=503,
-                message=str(e),
-                retryable=True,
-            )
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            return _handle_request_error(e, url)
 
     async def stream(self, request: AnthropicRequest) -> httpx.Response | AdapterError:
         try:
@@ -156,22 +152,8 @@ class PlanAdapter:
             await response.aclose()
             return self._classify_error(response.status_code, body.decode(errors="ignore"))
 
-        except httpx.TimeoutException:
-            logger.info("plan_request", url=url, status_code=504, error="timeout")
-            return AdapterError(
-                error_type=ErrorType.TIMEOUT,
-                status_code=504,
-                message="Request timeout",
-                retryable=True,
-            )
-        except httpx.RequestError as e:
-            logger.info("plan_request", url=url, status_code=503, error=str(e))
-            return AdapterError(
-                error_type=ErrorType.NETWORK_ERROR,
-                status_code=503,
-                message=str(e),
-                retryable=True,
-            )
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            return _handle_request_error(e, url)
 
     async def count_tokens(
         self, request: AnthropicRequest
@@ -199,22 +181,8 @@ class PlanAdapter:
 
             return self._classify_error(response.status_code, response.text)
 
-        except httpx.TimeoutException:
-            logger.info("plan_request", url=url, status_code=504, error="timeout")
-            return AdapterError(
-                error_type=ErrorType.TIMEOUT,
-                status_code=504,
-                message="Request timeout",
-                retryable=True,
-            )
-        except httpx.RequestError as e:
-            logger.info("plan_request", url=url, status_code=503, error=str(e))
-            return AdapterError(
-                error_type=ErrorType.NETWORK_ERROR,
-                status_code=503,
-                message=str(e),
-                retryable=True,
-            )
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            return _handle_request_error(e, url)
 
     def _classify_error(self, status_code: int, body: str) -> AdapterError:
         if status_code == 429:

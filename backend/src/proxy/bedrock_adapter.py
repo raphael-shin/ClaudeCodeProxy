@@ -10,11 +10,8 @@ from ..repositories import BedrockKeyRepository
 from ..security import KMSEnvelopeEncryption
 from .adapter_base import AdapterError, AdapterResponse
 from .bedrock_converse import build_converse_request, iter_anthropic_sse, parse_converse_response
-from .cache import TTLCache
 from .context import RequestContext
-
-# Decrypted Bedrock key cache (per-process)
-_bedrock_key_cache = TTLCache(get_settings().bedrock_key_cache_ttl)
+from .dependencies import get_proxy_deps
 
 
 class BedrockAdapter:
@@ -127,9 +124,10 @@ class BedrockAdapter:
 
     async def _get_decrypted_key(self, access_key_id: UUID) -> str | None:
         cache_key = str(access_key_id)
+        cache = get_proxy_deps().bedrock_key_cache
 
         # Check cache
-        cached = _bedrock_key_cache.get(cache_key)
+        cached = cache.get(cache_key)
         if cached:
             return cached
 
@@ -139,7 +137,7 @@ class BedrockAdapter:
             return None
 
         decrypted = self._encryption.decrypt(bedrock_key.encrypted_key)
-        _bedrock_key_cache.set(cache_key, decrypted)
+        cache.set(cache_key, decrypted)
         return decrypted
 
     async def close(self) -> None:
@@ -195,4 +193,4 @@ def _classify_http_error(status_code: int, body: str) -> AdapterError:
 
 
 def invalidate_bedrock_key_cache(access_key_id: UUID) -> None:
-    _bedrock_key_cache.invalidate(str(access_key_id))
+    get_proxy_deps().bedrock_key_cache.invalidate(str(access_key_id))

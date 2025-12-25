@@ -4,7 +4,7 @@ from ..domain import AnthropicRequest, AnthropicResponse, AnthropicUsage, RETRYA
 from ..logging import get_logger
 from .context import RequestContext
 from .adapter_base import AdapterResponse, AdapterError, Adapter
-from .circuit_breaker import circuit_breaker
+from .dependencies import get_proxy_deps
 
 logger = get_logger(__name__)
 
@@ -54,15 +54,16 @@ class ProxyRouter:
     ) -> ProxyResponse:
         key_id = str(ctx.access_key_id)
         providers_tried = []
+        cb = get_proxy_deps().circuit_breaker
 
         # Check circuit breaker
-        if not circuit_breaker.is_open(key_id):
+        if not cb.is_open(key_id):
             # Try Plan first
             providers_tried.append("plan")
             result = await self._plan.invoke(ctx, request)
 
             if isinstance(result, AdapterResponse):
-                circuit_breaker.record_success(key_id)
+                cb.record_success(key_id)
                 return ProxyResponse(
                     success=True,
                     response=result.response,
@@ -73,7 +74,7 @@ class ProxyRouter:
                 )
 
             # Record failure for circuit breaker
-            circuit_breaker.record_failure(key_id, result.error_type)
+            cb.record_failure(key_id, result.error_type)
 
             # Check if can fallback
             if not result.retryable or result.error_type not in RETRYABLE_ERRORS:

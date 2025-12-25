@@ -7,12 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..repositories import AccessKeyRepository, BedrockKeyRepository
 from ..security import KeyHasher
-from ..config import get_settings
 from .context import RequestContext
-from .cache import TTLCache
-
-# Global caches (per-process)
-_access_key_cache = TTLCache(get_settings().access_key_cache_ttl)
+from .dependencies import get_proxy_deps
 
 
 @dataclass
@@ -36,9 +32,10 @@ class AuthService:
 
     async def authenticate(self, raw_key: str) -> RequestContext | None:
         key_hash = self._hasher.hash(raw_key)
+        cache = get_proxy_deps().access_key_cache
 
         # Check cache
-        cached: _CachedAccessKey | None = _access_key_cache.get(key_hash)
+        cached: _CachedAccessKey | None = cache.get(key_hash)
         if cached:
             return RequestContext(
                 request_id=f"req_{uuid.uuid4().hex[:16]}",
@@ -70,7 +67,7 @@ class AuthService:
         )
 
         # Cache result
-        _access_key_cache.set(key_hash, cached_entry)
+        cache.set(key_hash, cached_entry)
         return RequestContext(
             request_id=f"req_{uuid.uuid4().hex[:16]}",
             user_id=user_id,
@@ -83,7 +80,7 @@ class AuthService:
 
 
 def invalidate_access_key_cache(key_hash: str) -> None:
-    _access_key_cache.invalidate(key_hash)
+    get_proxy_deps().access_key_cache.invalidate(key_hash)
 
 
 async def get_auth_service(session: AsyncSession = Depends(get_session)) -> AuthService:

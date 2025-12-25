@@ -78,7 +78,3 @@ class CircuitBreaker:
         if state.failure_count >= self.failure_threshold:
             state.state = CircuitState.OPEN
             state.opened_at = now
-
-
-# Global circuit breaker instance (per-process)
-circuit_breaker = CircuitBreaker()

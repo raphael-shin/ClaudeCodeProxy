@@ -3,8 +3,10 @@ from .auth import AuthService, get_auth_service, invalidate_access_key_cache
 from .router import ProxyRouter, ProxyResponse
 from .plan_adapter import PlanAdapter
 from .bedrock_adapter import BedrockAdapter, invalidate_bedrock_key_cache
-from .circuit_breaker import CircuitBreaker, circuit_breaker
+from .circuit_breaker import CircuitBreaker
+from .dependencies import ProxyDependencies, get_proxy_deps, set_proxy_deps, reset_proxy_deps
 from .usage import UsageRecorder
+from .metrics import CloudWatchMetricsEmitter
 from .cache import TTLCache
 
 __all__ = [
@@ -18,7 +20,11 @@ __all__ = [
     "BedrockAdapter",
     "invalidate_bedrock_key_cache",
     "CircuitBreaker",
-    "circuit_breaker",
+    "ProxyDependencies",
+    "get_proxy_deps",
+    "set_proxy_deps",
+    "reset_proxy_deps",
     "UsageRecorder",
+    "CloudWatchMetricsEmitter",
     "TTLCache",
 ]

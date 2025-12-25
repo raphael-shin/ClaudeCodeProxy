@@ -23,6 +23,21 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+_PASSTHROUGH_HEADERS = ("anthropic-version", "anthropic-beta", "content-type")
+
+
+def _extract_outgoing_headers(raw_request: Request) -> dict[str, str]:
+    """Extract auth and passthrough headers from incoming request."""
+    headers: dict[str, str] = {}
+    if x_api_key := raw_request.headers.get("x-api-key"):
+        headers["x-api-key"] = x_api_key
+    if authorization := raw_request.headers.get("authorization"):
+        headers["Authorization"] = authorization
+    for name in _PASSTHROUGH_HEADERS:
+        if value := raw_request.headers.get(name):
+            headers[name] = value
+    return headers
+
 
 @router.post("/ak/{access_key}/v1/messages")
 async def proxy_messages(
@@ -39,25 +54,14 @@ async def proxy_messages(
     if not ctx:
         raise HTTPException(status_code=404, detail="Not found")
 
-    # Extract and pass through auth headers as-is
-    x_api_key = raw_request.headers.get("x-api-key")
-    authorization = raw_request.headers.get("authorization")
-    outgoing_headers: dict[str, str] = {}
-    if x_api_key:
-        outgoing_headers["x-api-key"] = x_api_key
-    if authorization:
-        outgoing_headers["Authorization"] = authorization
-    for header_name in ("anthropic-version", "anthropic-beta", "content-type"):
-        header_value = raw_request.headers.get(header_name)
-        if header_value:
-            outgoing_headers[header_name] = header_value
+    outgoing_headers = _extract_outgoing_headers(raw_request)
 
-    # Log header presence to confirm how Claude Code sends tokens (do not log secrets)
+    # Log header presence (do not log secrets)
     logger.info(
         "proxy_auth_headers",
-        has_x_api_key=bool(x_api_key),
-        has_authorization=bool(authorization),
-        authorization_is_bearer=bool(authorization and authorization.startswith("Bearer ")),
+        has_x_api_key="x-api-key" in outgoing_headers,
+        has_authorization="Authorization" in outgoing_headers,
+        authorization_is_bearer=outgoing_headers.get("Authorization", "").startswith("Bearer "),
     )
 
     if request.stream:
@@ -167,21 +171,10 @@ async def proxy_count_tokens(
     if not ctx:
         raise HTTPException(status_code=404, detail="Not found")
 
-    # Extract and pass through auth headers as-is
-    x_api_key = raw_request.headers.get("x-api-key")
-    authorization = raw_request.headers.get("authorization")
-    outgoing_headers: dict[str, str] = {}
-    if x_api_key:
-        outgoing_headers["x-api-key"] = x_api_key
-    if authorization:
-        outgoing_headers["Authorization"] = authorization
-    for header_name in ("anthropic-version", "anthropic-beta", "content-type"):
-        header_value = raw_request.headers.get(header_name)
-        if header_value:
-            outgoing_headers[header_name] = header_value
+    outgoing_headers = _extract_outgoing_headers(raw_request)
 
     settings = get_settings()
-    if not x_api_key and not authorization and not settings.plan_api_key:
+    if "x-api-key" not in outgoing_headers and "Authorization" not in outgoing_headers and not settings.plan_api_key:
         error_body = AnthropicError(
             error={
                 "type": "authentication_error",
