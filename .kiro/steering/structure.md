@@ -1,200 +1,124 @@
-# Project Structure
+---
+inclusion: always
+---
+
+# Project Structure & Architecture
+
+## Directory Layout
 
 ```
-├── backend/                    # FastAPI backend service
-│   ├── src/
-│   │   ├── api/               # API route handlers
-│   │   │   ├── admin_*.py     # Admin endpoints (auth, users, keys, usage)
-│   │   │   ├── proxy_router.py # Main proxy endpoint
-│   │   │   └── deps.py        # Dependency injection
-│   │   ├── db/                # Database layer
-│   │   │   ├── models.py      # SQLAlchemy ORM models
-│   │   │   └── session.py     # Async session management
-│   │   ├── domain/            # Domain logic
-│   │   │   ├── entities.py    # Domain entities
-│   │   │   ├── enums.py       # Enumerations
-│   │   │   └── schemas.py     # Pydantic schemas
-│   │   ├── proxy/             # Proxy logic
-│   │   │   ├── bedrock_converse/  # Bedrock API adapter
-│   │   │   ├── adapter_base.py    # Base adapter interface
-│   │   │   ├── bedrock_adapter.py # Bedrock implementation
-│   │   │   ├── plan_adapter.py    # Anthropic Plan adapter
-│   │   │   ├── circuit_breaker.py # Failure handling
-│   │   │   └── router.py          # Request routing logic
-│   │   ├── repositories/      # Data access layer
-│   │   ├── security/          # Encryption & key management
-│   │   ├── config.py          # Settings (pydantic-settings)
-│   │   ├── logging.py         # Structured logging setup
-│   │   └── main.py            # FastAPI app entry point
-│   ├── alembic/               # Database migrations
-│   │   └── versions/          # Migration scripts
-│   ├── tests/                 # pytest tests
-│   └── pyproject.toml         # Python dependencies
-│
-├── frontend/                   # React admin dashboard
-│   ├── src/
-│   │   ├── pages/             # Page components
-│   │   │   ├── LoginPage.tsx
-│   │   │   ├── UsersPage.tsx
-│   │   │   ├── UserDetailPage.tsx
-│   │   │   └── UsagePage.tsx
-│   │   ├── lib/               # Utilities
-│   │   │   └── api.ts         # API client
-│   │   ├── App.tsx            # Router setup
-│   │   └── main.tsx           # Entry point
-│   ├── scripts/               # Deployment scripts
-│   └── package.json
-│
-├── infra/                      # AWS CDK infrastructure
-│   ├── stacks/
-│   │   ├── network_stack.py   # VPC, security groups
-│   │   ├── database_stack.py  # RDS PostgreSQL
-│   │   ├── compute_stack.py   # ECS Fargate service
-│   │   ├── secrets_stack.py   # Secrets Manager, KMS
-│   │   ├── monitoring_stack.py # CloudWatch alarms
-│   │   └── amplify_stack.py   # Frontend hosting
-│   └── app.py                 # CDK app entry point
-│
-└── docker-compose.yml          # Local development setup
+backend/                        # FastAPI backend (Python 3.11+)
+├── src/
+│   ├── api/                   # Route handlers
+│   │   ├── admin_*.py         # Admin endpoints
+│   │   ├── proxy_router.py    # Main proxy endpoint
+│   │   └── deps.py            # FastAPI dependencies
+│   ├── db/                    # Database layer
+│   │   ├── models.py          # SQLAlchemy ORM models
+│   │   └── session.py         # Async session factory
+│   ├── domain/                # Business logic
+│   │   ├── entities.py        # Domain entities
+│   │   ├── enums.py           # Enumerations
+│   │   └── schemas.py         # Pydantic schemas
+│   ├── proxy/                 # Proxy routing logic
+│   │   ├── bedrock_converse/  # Bedrock API translation
+│   │   ├── adapter_base.py    # Base adapter interface
+│   │   ├── bedrock_adapter.py # Bedrock implementation
+│   │   ├── plan_adapter.py    # Anthropic Plan adapter
+│   │   ├── circuit_breaker.py # Failure handling
+│   │   └── router.py          # Request routing
+│   ├── repositories/          # Data access layer
+│   ├── security/              # Encryption & keys
+│   ├── config.py              # Settings (pydantic-settings)
+│   └── main.py                # App entry point
+├── alembic/versions/          # DB migrations
+└── tests/                     # pytest tests
+
+frontend/                       # React admin dashboard (TypeScript)
+├── src/
+│   ├── pages/                 # Page components
+│   ├── lib/api.ts             # API client
+│   ├── App.tsx                # Router setup
+│   └── main.tsx               # Entry point
+└── scripts/                   # Deployment scripts
+
+infra/                          # AWS CDK (Python)
+├── stacks/                    # CDK stack definitions
+└── app.py                     # CDK entry point
 ```
 
 ## Architecture Patterns
 
-- **Backend**: Layered architecture (API → Domain → Repository → DB)
-- **Proxy**: Adapter pattern for multiple AI providers with circuit breaker
-- **Frontend**: Page-based routing with centralized API client
-- **Infra**: Multi-stack CDK with cross-stack references
-
-## Key Files
-
-- `backend/.env` - Backend environment variables
-- `frontend/.env.local` - Frontend dev config
-- `frontend/.env.production` - Frontend prod config
-- `backend/alembic.ini` - Migration config
-
-## Critical Code Locations
-
-### Backend Entry Points
-| File | Line Range | Purpose |
-|------|-----------|---------|
-| `backend/src/main.py` | Full file | FastAPI app initialization, CORS setup, router mounting |
-| `backend/src/api/proxy_router.py` | 42-50 | Main proxy endpoint `/ak/{access_key}/v1/messages` |
-| `backend/src/proxy/router.py` | 167-264 | Core routing logic: Plan → Bedrock fallback |
-
-### Adapters (Provider Implementations)
-| File | Key Responsibilities |
-|------|---------------------|
-| `backend/src/proxy/adapter_base.py` | Base interface for all adapters |
-| `backend/src/proxy/plan_adapter.py` | Anthropic Plan API client (httpx-based) |
-| `backend/src/proxy/bedrock_adapter.py` | Bedrock client (boto3-based, with KMS decryption) |
-| `backend/src/proxy/bedrock_converse/` | Anthropic Messages ↔ Bedrock Converse translation |
-
-### Database Layer
-| File | Purpose |
-|------|---------|
-| `backend/src/db/models.py` | SQLAlchemy ORM models (5 tables) |
-| `backend/src/db/session.py` | Async session factory |
-| `backend/alembic/versions/001_initial_schema.py` | Initial DB schema migration |
-
-### Security & Config
-| File | Key Content |
-|------|-------------|
-| `backend/src/config.py` | Pydantic settings (all `PROXY_*` env vars) |
-| `backend/src/security/encryption.py` | KMS envelope encryption for Bedrock credentials |
-| `backend/src/security/keys.py` | Access key generation & HMAC hashing |
-| `backend/src/proxy/auth.py` | Access key authentication middleware |
-
-### Frontend Critical Files
-| File | Purpose |
-|------|---------|
-| `frontend/src/lib/api.ts` | Type-safe API client, JWT token management |
-| `frontend/src/App.tsx` | React Router setup, protected routes |
-| `frontend/src/pages/UserDetailPage.tsx` | Most complex page: key management + Bedrock credential registration |
-
-## Data Flow Diagrams
-
-### Request Path (Successful Primary Route)
+### Layered Architecture (Backend)
 ```
-Client (Claude Code)
-    ↓ POST /ak/{key}/v1/messages
-proxy_router.py:42 (FastAPI endpoint)
-    ↓ auth_service.authenticate_request()
-auth.py:38 (validates access key)
-    ↓ ProxyRouter.route()
-router.py:167 (checks circuit breaker)
-    ↓ PlanAdapter.forward()
-plan_adapter.py:35 (httpx request)
-    ↓ Anthropic Plan API
-    ↓ 200 OK response
-    ↓ usage_recorder.record()
-usage.py:42 (save TokenUsageModel)
-    ↓ return ProxyResponse
-FastAPI streams response to client
+API Layer → Domain Layer → Repository Layer → Database
 ```
+- API handlers call domain services
+- Domain contains business logic and Pydantic schemas
+- Repositories handle all DB operations
+- Never bypass layers (e.g., no direct DB access from API)
 
-### Fallback Path (Rate Limit → Bedrock)
-```
-... (same as above until Plan API) ...
-    ↓ Anthropic Plan API
-    ↓ 429 Rate Limit Error
-router.py:210 (classifies error as retryable)
-    ↓ circuit_breaker.should_fallback()
-circuit_breaker.py:78 (checks state, records failure)
-    ↓ BedrockAdapter.forward()
-bedrock_adapter.py:68 (loads BedrockKey from cache/db)
-    ↓ encryption.decrypt()
-security/encryption.py:45 (KMS decrypt credentials)
-    ↓ bedrock_converse/ (API translation)
-    ↓ boto3.client('bedrock-runtime').converse()
-    ↓ response translation
-    ↓ usage_recorder.record(is_fallback=True)
-    ↓ return ProxyResponse
-```
-
-## Important Patterns
+### Adapter Pattern (Proxy)
+- `AdapterBase` defines interface for AI providers
+- `PlanAdapter` implements Anthropic Plan API
+- `BedrockAdapter` implements AWS Bedrock
+- Add new providers by implementing `AdapterBase`
 
 ### Repository Pattern
-All DB access goes through repositories (`backend/src/repositories/`):
-- `UserRepository` - CRUD for users
-- `AccessKeyRepository` - Key management with caching
-- `BedrockKeyRepository` - Encrypted credential storage
-- `TokenUsageRepository` - Raw usage events
-- `UsageAggregateRepository` - Pre-computed statistics
+All DB access through `backend/src/repositories/`:
+- `UserRepository` - User CRUD
+- `AccessKeyRepository` - Key management + caching
+- `BedrockKeyRepository` - Encrypted credentials
+- `TokenUsageRepository` - Usage events
+- `UsageAggregateRepository` - Aggregated stats
 
-Benefits: Clean separation, easy to mock for tests, centralized caching
+## Code Conventions
 
-### Dependency Injection (FastAPI)
-```python
-# in proxy_router.py
-async def proxy_messages(
-    session: AsyncSession = Depends(get_session),
-    auth_service: AuthService = Depends(get_auth_service),
-):
-    # session and auth_service auto-injected by FastAPI
+### Backend (Python)
+- Use `async/await` for all DB and HTTP operations
+- Type hints required on all functions
+- Environment variables use `PROXY_` prefix
+- Soft delete: use `deleted_at` column, filter with `.where(Model.deleted_at.is_(None))`
+- Dependencies via FastAPI `Depends()` for testability
+
+### Frontend (TypeScript)
+- Path alias: `@/` maps to `src/`
+- Centralized API client in `lib/api.ts`
+- Page-based routing with react-router-dom v6
+
+### Database
+- PostgreSQL 15 with asyncpg driver
+- SQLAlchemy 2.0 async mode
+- Alembic for migrations
+- 5 tables: `users`, `access_keys`, `bedrock_keys`, `token_usages`, `usage_aggregates`
+
+## Key Entry Points
+
+| Task | File |
+|------|------|
+| Add API endpoint | `backend/src/api/` |
+| Modify proxy logic | `backend/src/proxy/router.py` |
+| Add DB model | `backend/src/db/models.py` |
+| Add repository | `backend/src/repositories/` |
+| Modify config | `backend/src/config.py` |
+| Add frontend page | `frontend/src/pages/` |
+| Add CDK stack | `infra/stacks/` |
+
+## Request Flow
+
+```
+POST /ak/{access_key}/v1/messages
+    → proxy_router.py (auth via access key)
+    → router.py (circuit breaker check)
+    → PlanAdapter (primary) or BedrockAdapter (fallback)
+    → usage.py (record tokens)
+    → stream response to client
 ```
 
-All shared dependencies (DB session, config, services) use `Depends()` for testability.
+## When Adding New Features
 
-### Async/Await Throughout
-- All DB operations: `await session.execute(...)`
-- All HTTP calls: `async with httpx.AsyncClient() as client`
-- Streaming responses: `async for chunk in stream`
-
-Performance benefit: Non-blocking I/O, high concurrency without threading
-
-### Soft Delete Pattern
-```python
-# models.py
-deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
-
-# repositories use filters
-.where(Model.deleted_at.is_(None))
-```
-
-### Environment Variable Naming
-All backend config uses `PROXY_` prefix (defined in `config.py:45`):
-```python
-model_config = {"env_prefix": "PROXY_", "env_file": ".env"}
-```
-
-Example: `PROXY_DATABASE_URL`, `PROXY_JWT_SECRET`
+1. **New API endpoint**: Create handler in `api/`, add to router in `main.py`
+2. **New DB table**: Add model in `db/models.py`, create Alembic migration
+3. **New repository**: Implement in `repositories/`, inject via `Depends()`
+4. **New AI provider**: Implement `AdapterBase` in `proxy/`
+5. **New frontend page**: Add component in `pages/`, update `App.tsx` routes
