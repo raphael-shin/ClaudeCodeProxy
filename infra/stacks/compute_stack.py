@@ -1,5 +1,6 @@
 from aws_cdk import (
     Stack,
+    CfnOutput,
     aws_ec2 as ec2,
     aws_ecs as ecs,
     aws_ecs_patterns as ecs_patterns,
@@ -136,5 +137,64 @@ class ComputeStack(Stack):
         self.service_name = fargate_service.service.service_name
         self.service_arn = fargate_service.service.service_arn
 
+        # Export load balancer for CloudFront integration
+        self.load_balancer = fargate_service.load_balancer
+
         # Export backend URL for frontend integration
         self.backend_url = f"http://{fargate_service.load_balancer.load_balancer_dns_name}"
+
+        # Create origin verify secret for CloudFront to ALB verification
+        self.origin_verify_secret = secretsmanager.Secret(
+            self,
+            "OriginVerifySecret",
+            secret_name="cloudfront-origin-verify-secret",
+            description="Secret header value for CloudFront to ALB verification",
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                exclude_punctuation=True,
+                password_length=32,
+            ),
+        )
+
+        # Get the listener from the fargate service
+        listener = fargate_service.listener
+
+        # Add listener rule to validate X-Origin-Verify header from CloudFront
+        # Requests with valid header are forwarded to the target group
+        elbv2.ApplicationListenerRule(
+            self,
+            "ValidOriginRule",
+            listener=listener,
+            priority=1,
+            conditions=[
+                elbv2.ListenerCondition.http_header(
+                    "X-Origin-Verify",
+                    [self.origin_verify_secret.secret_value.unsafe_unwrap()],
+                ),
+            ],
+            target_groups=[fargate_service.target_group],
+        )
+
+        # Modify default action to return 403 for requests without valid header
+        # This ensures only CloudFront traffic can reach the ALB
+        cfn_listener = listener.node.default_child
+        cfn_listener.add_property_override(
+            "DefaultActions",
+            [
+                {
+                    "Type": "fixed-response",
+                    "FixedResponseConfig": {
+                        "StatusCode": "403",
+                        "ContentType": "text/plain",
+                        "MessageBody": "Access Denied",
+                    },
+                }
+            ],
+        )
+
+        # Output the secret ARN for reference
+        CfnOutput(
+            self,
+            "OriginVerifySecretArn",
+            value=self.origin_verify_secret.secret_arn,
+            description="Origin Verify Secret ARN for CloudFront configuration",
+        )

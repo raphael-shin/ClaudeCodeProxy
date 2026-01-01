@@ -52,6 +52,16 @@ class BedrockKeyRepository:
         )
         return result.rowcount > 0
 
+    async def list_access_key_ids(self, access_key_ids: list[UUID]) -> set[UUID]:
+        if not access_key_ids:
+            return set()
+        result = await self.session.execute(
+            select(BedrockKeyModel.access_key_id).where(
+                BedrockKeyModel.access_key_id.in_(access_key_ids)
+            )
+        )
+        return set(result.scalars().all())
+
     def _to_entity(self, model: BedrockKeyModel) -> BedrockKey:
         return BedrockKey(
             access_key_id=model.access_key_id,

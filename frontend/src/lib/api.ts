@@ -135,6 +135,7 @@ export interface AccessKey {
   bedrock_model: string;
   created_at: string;
   raw_key?: string;
+  has_bedrock_key?: boolean;
 }
 
 export interface UsageParams {

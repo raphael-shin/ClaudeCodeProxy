@@ -6,6 +6,7 @@ from stacks.database_stack import DatabaseStack
 from stacks.compute_stack import ComputeStack
 from stacks.monitoring_stack import MonitoringStack
 from stacks.amplify_stack import AmplifyStack
+from stacks.cloudfront_stack import CloudFrontStack
 
 app = cdk.App()
 
@@ -33,6 +34,16 @@ MonitoringStack(
     "MonitoringStack",
     service_name=compute.service_name,
     service_arn=compute.service_arn,
+    env=env,
+)
+
+# CloudFront Stack for securing admin access
+# ALB is protected by CloudFront prefix list SG + custom header validation
+cloudfront = CloudFrontStack(
+    app,
+    "CloudFrontStack",
+    alb=compute.load_balancer,
+    origin_verify_secret=compute.origin_verify_secret,
     env=env,
 )
 

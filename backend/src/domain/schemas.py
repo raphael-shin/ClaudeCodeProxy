@@ -83,6 +83,7 @@ class AccessKeyResponse(BaseModel):
     bedrock_model: str
     created_at: datetime
     raw_key: str | None = None  # Only on creation
+    has_bedrock_key: bool = False
 
 
 class BedrockKeyRegister(BaseModel):

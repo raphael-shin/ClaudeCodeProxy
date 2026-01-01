@@ -22,8 +22,13 @@ async def list_access_keys(
     session: AsyncSession = Depends(get_session),
 ):
     repo = AccessKeyRepository(session)
+    bedrock_repo = BedrockKeyRepository(session)
     keys = await repo.list_by_user(user_id)
-    return [AccessKeyResponse(**k.__dict__) for k in keys]
+    bedrock_ids = await bedrock_repo.list_access_key_ids([key.id for key in keys])
+    return [
+        AccessKeyResponse(**k.__dict__, has_bedrock_key=k.id in bedrock_ids)
+        for k in keys
+    ]
 
 
 @router.post("/users/{user_id}/access-keys", response_model=AccessKeyResponse, status_code=201)
@@ -54,7 +59,11 @@ async def issue_access_key(
     )
     await session.commit()
 
-    return AccessKeyResponse(**access_key.__dict__, raw_key=raw_key)
+    return AccessKeyResponse(
+        **access_key.__dict__,
+        raw_key=raw_key,
+        has_bedrock_key=False,
+    )
 
 
 @router.delete("/access-keys/{key_id}", status_code=204)
@@ -118,7 +127,11 @@ async def rotate_access_key(
 
     invalidate_access_key_cache(old_key.key_hash)
 
-    return AccessKeyResponse(**new_key.__dict__, raw_key=raw_key)
+    return AccessKeyResponse(
+        **new_key.__dict__,
+        raw_key=raw_key,
+        has_bedrock_key=old_bedrock_key is not None,
+    )
 
 
 @router.post("/access-keys/{key_id}/bedrock-key", status_code=201)

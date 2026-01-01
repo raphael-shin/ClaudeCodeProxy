@@ -15,7 +15,7 @@ router = APIRouter(prefix="/admin/usage", tags=["usage"], dependencies=[Depends(
 async def get_usage(
     user_id: UUID | None = None,
     access_key_id: UUID | None = None,
-    bucket_type: str = Query(default="hour", regex="^(minute|hour|day|week|month)$"),
+    bucket_type: str = Query(default="hour", pattern="^(minute|hour|day|week|month)$"),
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     session: AsyncSession = Depends(get_session),
@@ -66,7 +66,7 @@ async def get_usage(
 
 @router.get("/top-users", response_model=list[UsageTopUser])
 async def get_top_users(
-    bucket_type: str = Query(default="hour", regex="^(minute|hour|day|week|month)$"),
+    bucket_type: str = Query(default="hour", pattern="^(minute|hour|day|week|month)$"),
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     limit: int = 10,
