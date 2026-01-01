@@ -14,6 +14,7 @@ Claude Code offers two pricing models: a fixed monthly subscription (Plan) or pa
 ### Enterprise Security & Compliance
 - **Data privacy**: When using Amazon Bedrock, your data is never used for model training
 - **Centralized access control**: Manage authentication and permissions through Bedrock API keys
+- **Access key handling**: Access keys are stored as HMAC-SHA256 hashes and shown once on issuance
 - **Audit logging**: CloudTrail integration enables API call history logging and analysis
 - **LLM Gateway**: Centralized governance and policy management for AI usage across the organization
 
@@ -118,9 +119,9 @@ npm run dev
 
 ### Admin Dashboard Features
 
-- Create users and issue access keys
-- Register Bedrock credentials per access key for fallback
-- View usage analytics by time range with per-user breakdown
+- Token overview dashboard with throughput, cumulative usage, and top users
+- Create users and issue access keys (keys are shown once on creation)
+- Register Bedrock credentials per access key and see linked status in the list
 
 ## Deployment
 
