@@ -60,9 +60,19 @@ Claude Code offers two pricing models: a fixed monthly subscription (Plan) or pa
 1. Get an access key from your admin
 2. Configure Claude Code:
 
+### Option 1: Environment Variables
 ```bash
 export ANTHROPIC_BASE_URL=https://proxy.example.com/ak/ak_your_access_key
-export ANTHROPIC_API_KEY=your_anthropic_plan_key
+```
+
+### Option 2: Settings File (`~/.claude/settings.json`)
+You can also configure Claude Code globally by editing `~/.claude/settings.json`:
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://proxy.example.com/ak/ak_your_access_key"
+  }
+}
 ```
 
 3. Use Claude Code as normal — the proxy handles routing transparently
