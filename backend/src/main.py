@@ -8,6 +8,7 @@ from .api import (
     admin_users_router,
     admin_keys_router,
     admin_usage_router,
+    admin_pricing_router,
 )
 
 setup_logging()
@@ -31,3 +32,4 @@ app.include_router(admin_auth_router)
 app.include_router(admin_users_router)
 app.include_router(admin_keys_router)
 app.include_router(admin_usage_router)
+app.include_router(admin_pricing_router)

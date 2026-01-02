@@ -99,14 +99,16 @@ class ApiClient {
   getUsage = (params: UsageParams) => {
     const query = new URLSearchParams();
     if (params.user_id) query.set('user_id', params.user_id);
+    if (params.team_id) query.set('team_id', params.team_id);
     if (params.access_key_id) query.set('access_key_id', params.access_key_id);
     if (params.bucket_type) query.set('bucket_type', params.bucket_type);
-    if (params.start_time) query.set('start_time', params.start_time);
-    if (params.end_time) query.set('end_time', params.end_time);
+    if (params.period) query.set('period', params.period);
+    if (params.start_date) query.set('start_date', params.start_date);
+    if (params.end_date) query.set('end_date', params.end_date);
     return this.fetch<UsageResponse>(`/admin/usage?${query}`);
   };
 
-  getTopUsers = (params: UsageParams & { limit?: number }) => {
+  getTopUsers = (params: TopUsersParams) => {
     const query = new URLSearchParams();
     if (params.bucket_type) query.set('bucket_type', params.bucket_type);
     if (params.start_time) query.set('start_time', params.start_time);
@@ -114,6 +116,16 @@ class ApiClient {
     if (params.limit) query.set('limit', String(params.limit));
     return this.fetch<UsageTopUser[]>(`/admin/usage/top-users?${query}`);
   };
+
+  // Pricing
+  getModelPricing = (region: string = 'ap-northeast-2') => {
+    const query = new URLSearchParams();
+    query.set('region', region);
+    return this.fetch<PricingListResponse>(`/api/pricing/models?${query}`);
+  };
+
+  reloadPricing = () =>
+    this.fetch<void>('/api/pricing/reload', { method: 'POST' });
 }
 
 export const api = new ApiClient();
@@ -140,10 +152,19 @@ export interface AccessKey {
 
 export interface UsageParams {
   user_id?: string;
+  team_id?: string;
   access_key_id?: string;
+  bucket_type?: string;
+  period?: 'day' | 'week' | 'month';
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface TopUsersParams {
   bucket_type?: string;
   start_time?: string;
   end_time?: string;
+  limit?: number;
 }
 
 export interface UsageBucket {
@@ -152,6 +173,13 @@ export interface UsageBucket {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cache_write_tokens: number;
+  cache_read_tokens: number;
+  input_cost_usd: string;
+  output_cost_usd: string;
+  cache_write_cost_usd: string;
+  cache_read_cost_usd: string;
+  estimated_cost_usd: string;
 }
 
 export interface UsageResponse {
@@ -160,6 +188,14 @@ export interface UsageResponse {
   total_input_tokens: number;
   total_output_tokens: number;
   total_tokens: number;
+  total_cache_write_tokens: number;
+  total_cache_read_tokens: number;
+  total_input_cost_usd: string;
+  total_output_cost_usd: string;
+  total_cache_write_cost_usd: string;
+  total_cache_read_cost_usd: string;
+  estimated_cost_usd: string;
+  cost_breakdown: CostBreakdownByModel[];
 }
 
 export interface UsageTopUser {
@@ -167,4 +203,29 @@ export interface UsageTopUser {
   name: string;
   total_tokens: number;
   total_requests: number;
+}
+
+// Pricing types
+export interface ModelPricing {
+  model_id: string;
+  region: string;
+  input_price: string;
+  output_price: string;
+  cache_write_price: string;
+  cache_read_price: string;
+  effective_date: string;
+}
+
+export interface PricingListResponse {
+  models: ModelPricing[];
+  region: string;
+}
+
+export interface CostBreakdownByModel {
+  model_id: string;
+  total_cost_usd: string;
+  input_cost_usd: string;
+  output_cost_usd: string;
+  cache_write_cost_usd: string;
+  cache_read_cost_usd: string;
 }

@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, UsageResponse, UsageTopUser, User } from '@/lib/api';
 import {
+  formatKstDateTime,
+  resolveCustomRange,
+  resolvePeriodRange,
+  selectBucketType,
+  UsagePeriod,
+} from '@/lib/usageRange';
+import {
   AreaChart,
   Area,
   LineChart,
@@ -13,19 +20,13 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-const RANGE_PRESETS = [
-  { key: '1h', label: '1h', minutes: 60 },
-  { key: '3h', label: '3h', minutes: 180 },
-  { key: '12h', label: '12h', minutes: 720 },
-  { key: '1d', label: '1d', minutes: 1440 },
-  { key: '3d', label: '3d', minutes: 4320 },
-  { key: '1w', label: '1w', minutes: 10080 },
-  { key: 'custom', label: 'Custom' },
-];
+type RangePreset = UsagePeriod | 'custom';
 
-const TIMEZONE_OPTIONS = [
-  { value: 'UTC', label: 'UTC timezone', offsetMinutes: 0 },
-  { value: 'Asia/Seoul', label: 'Asia/Seoul (GMT+9)', offsetMinutes: 540 },
+const RANGE_PRESETS: { key: RangePreset; label: string }[] = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+  { key: 'custom', label: 'Custom' },
 ];
 
 export default function UsagePage() {
@@ -34,41 +35,20 @@ export default function UsagePage() {
   const [topUsers, setTopUsers] = useState<UsageTopUser[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [rangePreset, setRangePreset] = useState('3h');
+  const [rangePreset, setRangePreset] = useState<RangePreset>('week');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
-  const [timezone, setTimezone] = useState('Asia/Seoul');
-
-  const timezoneOption =
-    TIMEZONE_OPTIONS.find((option) => option.value === timezone) || TIMEZONE_OPTIONS[1];
 
   const range = useMemo(() => {
-    if (rangePreset !== 'custom') {
-      const preset = RANGE_PRESETS.find((item) => item.key === rangePreset);
-      if (!preset || !preset.minutes) return null;
-      const end = new Date();
-      const start = new Date(end.getTime() - preset.minutes * 60 * 1000);
-      return { start, end };
+    if (rangePreset === 'custom') {
+      if (!customRange.start || !customRange.end) return null;
+      return resolveCustomRange(customRange.start, customRange.end);
     }
-
-    if (!customRange.start || !customRange.end) {
-      return null;
-    }
-
-    const start = parseDateTimeLocal(customRange.start, timezoneOption.offsetMinutes);
-    const end = parseDateTimeLocal(customRange.end, timezoneOption.offsetMinutes);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return null;
-    }
-    return { start, end };
-  }, [customRange.end, customRange.start, rangePreset, timezoneOption.offsetMinutes]);
+    return resolvePeriodRange(rangePreset);
+  }, [customRange.end, customRange.start, rangePreset]);
 
   const bucketType = useMemo(() => {
-    if (!range) return 'hour';
-    const hours = (range.end.getTime() - range.start.getTime()) / (60 * 60 * 1000);
-    if (hours <= 3) return 'minute';
-    if (hours <= 48) return 'hour';
-    if (hours <= 24 * 14) return 'day';
-    return 'week';
+    if (!range) return 'day';
+    return selectBucketType(range.rangeDays);
   }, [range]);
 
   useEffect(() => {
@@ -78,25 +58,35 @@ export default function UsagePage() {
   useEffect(() => {
     if (!range) return;
 
-    const params = {
+    const usageParams = {
       bucket_type: bucketType,
-      start_time: range.start.toISOString(),
-      end_time: range.end.toISOString(),
+      ...(rangePreset === 'custom'
+        ? { start_date: range.startDate, end_date: range.endDate }
+        : { period: rangePreset }),
     };
 
-    api.getUsage(params).then(setUsage).catch(() => {});
-    api.getTopUsers({ ...params, limit: 8 }).then(setTopUsers).catch(() => {});
+    const topUsersParams = {
+      bucket_type: bucketType,
+      start_time: range.startTime.toISOString(),
+      end_time: range.endTime.toISOString(),
+      limit: 8,
+    };
+
+    api.getUsage(usageParams).then(setUsage).catch(() => {});
+    api.getTopUsers(topUsersParams).then(setTopUsers).catch(() => {});
 
     if (selectedUserId) {
-      api.getUsage({ ...params, user_id: selectedUserId }).then(setUserUsage).catch(() => {});
+      api.getUsage({ ...usageParams, user_id: selectedUserId })
+        .then(setUserUsage)
+        .catch(() => {});
     } else {
       setUserUsage(null);
     }
-  }, [bucketType, range, selectedUserId]);
+  }, [bucketType, range, rangePreset, selectedUserId]);
 
   const chartData =
     usage?.buckets.map((b) => ({
-      time: formatTimestamp(b.bucket_start, timezone),
+      time: formatKstDateTime(new Date(b.bucket_start)),
       tokens: b.total_tokens,
       requests: b.requests,
       inputTokens: b.input_tokens,
@@ -105,7 +95,7 @@ export default function UsagePage() {
 
   const userChartData =
     userUsage?.buckets.map((b) => ({
-      time: formatTimestamp(b.bucket_start, timezone),
+      time: formatKstDateTime(new Date(b.bucket_start)),
       tokens: b.total_tokens,
       requests: b.requests,
     })) || [];
@@ -137,17 +127,6 @@ export default function UsagePage() {
               </button>
             ))}
           </div>
-          <select
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm"
-          >
-            {TIMEZONE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
           <Link to="/users" className="text-blue-600 text-sm font-semibold">
             ← Back to Users
           </Link>
@@ -158,19 +137,19 @@ export default function UsagePage() {
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
           <div className="text-sm text-gray-600 font-semibold">Custom Range</div>
           <input
-            type="datetime-local"
+            type="date"
             value={customRange.start}
             onChange={(e) => setCustomRange((prev) => ({ ...prev, start: e.target.value }))}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
           />
           <span className="text-gray-400 text-sm">to</span>
           <input
-            type="datetime-local"
+            type="date"
             value={customRange.end}
             onChange={(e) => setCustomRange((prev) => ({ ...prev, end: e.target.value }))}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
           />
-          <div className="text-xs text-gray-500">표시 시간대: {timezoneOption.label}</div>
+          <div className="text-xs text-gray-500">KST (UTC+9) inclusive range</div>
         </div>
       )}
 
@@ -305,24 +284,4 @@ function MetricCard({ label, value }: { label: string; value: number }) {
       <div className="text-2xl font-bold mt-2">{value.toLocaleString()}</div>
     </div>
   );
-}
-
-function parseDateTimeLocal(value: string, offsetMinutes: number) {
-  const [datePart, timePart] = value.split('T');
-  if (!datePart || !timePart) return new Date(NaN);
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hour, minute] = timePart.split(':').map(Number);
-  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  return new Date(utcDate.getTime() - offsetMinutes * 60 * 1000);
-}
-
-function formatTimestamp(isoString: string, timezone: string) {
-  const date = new Date(isoString);
-  return date.toLocaleString('en-US', {
-    timeZone: timezone,
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }

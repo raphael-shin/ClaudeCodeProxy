@@ -1,10 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '@/components/PageHeader';
-import { api, AccessKey, User } from '@/lib/api';
+import { api, AccessKey, UsageResponse, User } from '@/lib/api';
+import {
+  formatKstDate,
+  resolveCustomRange,
+  resolvePeriodRange,
+  selectBucketType,
+  UsagePeriod,
+} from '@/lib/usageRange';
 
 const inputClass =
   'w-full rounded-xl border border-line bg-surface px-4 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
+
+type RangePreset = UsagePeriod | 'custom';
+
+const RANGE_PRESETS: { key: RangePreset; label: string }[] = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+  { key: 'custom', label: 'Custom' },
+];
+
+const numberFormatter = new Intl.NumberFormat('en-US');
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
+const currencyShortFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 export default function UserDetailPage() {
   const { id } = useParams();
@@ -18,6 +48,10 @@ export default function UserDetailPage() {
   const [bedrockKey, setBedrockKey] = useState('');
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [rangePreset, setRangePreset] = useState<RangePreset>('month');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -30,6 +64,51 @@ export default function UserDetailPage() {
     api.getAccessKeys(id).then(setKeys);
   }, [id]);
 
+  const usageRange = useMemo(() => {
+    if (rangePreset === 'custom') {
+      if (!customRange.start || !customRange.end) return null;
+      return resolveCustomRange(customRange.start, customRange.end);
+    }
+    return resolvePeriodRange(rangePreset);
+  }, [customRange.end, customRange.start, rangePreset]);
+
+  const bucketType = useMemo(
+    () => (usageRange ? selectBucketType(usageRange.rangeDays) : 'day'),
+    [usageRange]
+  );
+
+  useEffect(() => {
+    if (!id || !usageRange) return;
+    let active = true;
+    setUsageLoading(true);
+
+    const usageParams = {
+      user_id: id,
+      bucket_type: bucketType,
+      ...(rangePreset === 'custom'
+        ? { start_date: usageRange.startDate, end_date: usageRange.endDate }
+        : { period: rangePreset }),
+    };
+
+    api
+      .getUsage(usageParams)
+      .then((response) => {
+        if (!active) return;
+        setUsage(response);
+      })
+      .catch(() => {
+        if (!active) return;
+        setUsage(null);
+      })
+      .finally(() => {
+        if (active) setUsageLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [bucketType, id, rangePreset, usageRange]);
+
   const activeKeys = useMemo(
     () => keys.filter((key) => key.status === 'active').length,
     [keys]
@@ -39,6 +118,28 @@ export default function UserDetailPage() {
     () => keys.find((key) => key.id === selectedKeyId) || null,
     [keys, selectedKeyId]
   );
+  const totalCost = usage ? parseCost(usage.estimated_cost_usd) : 0;
+  const inputCost = usage ? parseCost(usage.total_input_cost_usd) : 0;
+  const outputCost = usage ? parseCost(usage.total_output_cost_usd) : 0;
+  const cacheWriteCost = usage ? parseCost(usage.total_cache_write_cost_usd) : 0;
+  const cacheReadCost = usage ? parseCost(usage.total_cache_read_cost_usd) : 0;
+  const cacheCost = cacheWriteCost + cacheReadCost;
+  const cacheTokens = usage
+    ? usage.total_cache_write_tokens + usage.total_cache_read_tokens
+    : 0;
+  const costRows = useMemo(() => {
+    if (!usage) return [];
+    return [...usage.cost_breakdown]
+      .map((item) => ({
+        model: formatModelLabel(item.model_id),
+        inputCost: parseCost(item.input_cost_usd),
+        outputCost: parseCost(item.output_cost_usd),
+        cacheWriteCost: parseCost(item.cache_write_cost_usd),
+        cacheReadCost: parseCost(item.cache_read_cost_usd),
+        totalCost: parseCost(item.total_cost_usd),
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost);
+  }, [usage]);
 
   const handleIssueKey = async () => {
     if (!id) return;
@@ -156,6 +257,145 @@ export default function UserDetailPage() {
             <SummaryRow label="Revoked keys" value={revokedKeys} />
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-line bg-surface p-6 shadow-soft">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Cost & Usage</h2>
+            <p className="text-xs text-muted">KST-based ranges, stored pricing snapshots.</p>
+          </div>
+          <div className="inline-flex flex-wrap rounded-full border border-line bg-surface p-1 shadow-soft">
+            {RANGE_PRESETS.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                onClick={() => setRangePreset(preset.key)}
+                className={[
+                  'rounded-full px-4 py-1.5 text-sm font-semibold transition',
+                  rangePreset === preset.key
+                    ? 'bg-accent text-white shadow-soft'
+                    : 'text-muted hover:text-ink hover:bg-surface-2',
+                ].join(' ')}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {rangePreset === 'custom' && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface-2 p-4 text-xs text-muted">
+            <div className="text-xs uppercase tracking-[0.28em] text-muted">Custom Range</div>
+            <input
+              type="date"
+              value={customRange.start}
+              onChange={(event) =>
+                setCustomRange((prev) => ({ ...prev, start: event.target.value }))
+              }
+              className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-ink"
+            />
+            <span className="text-muted">to</span>
+            <input
+              type="date"
+              value={customRange.end}
+              onChange={(event) =>
+                setCustomRange((prev) => ({ ...prev, end: event.target.value }))
+              }
+              className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-ink"
+            />
+            <span className="text-muted">Inclusive range · UTC+9</span>
+          </div>
+        )}
+
+        {usageRange && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
+            <div>
+              Range:{' '}
+              {rangePreset === 'custom'
+                ? `${usageRange.startDate} - ${usageRange.endDate}`
+                : `${formatKstDate(usageRange.startTime)} - ${formatKstDate(
+                    usageRange.endTime
+                  )}`}{' '}
+              (KST)
+            </div>
+            <div>Bucket: {bucketType}</div>
+          </div>
+        )}
+
+        {usageLoading && (
+          <div className="mt-6 rounded-2xl border border-line bg-surface p-6 text-sm text-muted">
+            Loading usage data...
+          </div>
+        )}
+
+        {!usageLoading && !usage && (
+          <div className="mt-6 rounded-2xl border border-line bg-surface p-6 text-sm text-muted">
+            No usage data available for this range yet.
+          </div>
+        )}
+
+        {!usageLoading && usage && (
+          <>
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                label="Estimated Cost"
+                value={formatCurrency(totalCost)}
+                note={`Requests ${formatNumber(usage.total_requests)}`}
+              />
+              <MetricCard label="Input Cost" value={formatCurrency(inputCost)} />
+              <MetricCard label="Output Cost" value={formatCurrency(outputCost)} />
+              <MetricCard
+                label="Cache Cost"
+                value={formatCurrency(cacheCost)}
+                note={`${formatNumber(cacheTokens)} cache tokens`}
+              />
+            </div>
+
+            <div className="mt-6 overflow-hidden rounded-2xl border border-line">
+              {costRows.length === 0 ? (
+                <div className="px-6 py-10 text-center text-sm text-muted">
+                  No cost breakdown recorded for this user.
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-[0.2em] text-muted">
+                      <th className="px-6 py-3">Model</th>
+                      <th className="px-6 py-3">Input</th>
+                      <th className="px-6 py-3">Output</th>
+                      <th className="px-6 py-3">Cache Write</th>
+                      <th className="px-6 py-3">Cache Read</th>
+                      <th className="px-6 py-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costRows.map((row) => (
+                      <tr key={row.model} className="border-t border-line/60">
+                        <td className="px-6 py-4 font-medium text-ink">{row.model}</td>
+                        <td className="px-6 py-4 text-muted">
+                          {formatCurrency(row.inputCost)}
+                        </td>
+                        <td className="px-6 py-4 text-muted">
+                          {formatCurrency(row.outputCost)}
+                        </td>
+                        <td className="px-6 py-4 text-muted">
+                          {formatCurrency(row.cacheWriteCost)}
+                        </td>
+                        <td className="px-6 py-4 text-muted">
+                          {formatCurrency(row.cacheReadCost)}
+                        </td>
+                        <td className="px-6 py-4 text-right font-semibold text-ink">
+                          {formatCurrency(row.totalCost)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-6 shadow-soft">
@@ -359,6 +599,16 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
   );
 }
 
+function MetricCard({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-soft">
+      <div className="text-xs uppercase tracking-[0.24em] text-muted">{label}</div>
+      <div className="mt-3 text-2xl font-semibold text-ink">{value}</div>
+      {note && <div className="mt-2 text-xs text-muted">{note}</div>}
+    </div>
+  );
+}
+
 function SummaryRow({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center justify-between">
@@ -366,6 +616,28 @@ function SummaryRow({ label, value }: { label: string; value: number }) {
       <span className="text-ink">{value}</span>
     </div>
   );
+}
+
+function formatNumber(value: number) {
+  return numberFormatter.format(value);
+}
+
+function formatCurrency(value: number) {
+  if (value >= 1) return currencyShortFormatter.format(value);
+  return currencyFormatter.format(value);
+}
+
+function parseCost(value: string | number | undefined) {
+  if (value === undefined) return 0;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatModelLabel(modelId: string) {
+  if (modelId.includes('opus')) return 'Claude Opus 4.5';
+  if (modelId.includes('sonnet')) return 'Claude Sonnet 4.5';
+  if (modelId.includes('haiku')) return 'Claude Haiku 4.5';
+  return modelId;
 }
 
 function formatDate(value: string) {

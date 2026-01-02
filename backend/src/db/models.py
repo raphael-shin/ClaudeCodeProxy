@@ -1,7 +1,19 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import String, Text, Integer, BigInteger, Boolean, LargeBinary, ForeignKey, Index
+from sqlalchemy import (
+    String,
+    Text,
+    Integer,
+    BigInteger,
+    Boolean,
+    LargeBinary,
+    ForeignKey,
+    Index,
+    Numeric,
+    Date,
+)
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -77,6 +89,40 @@ class TokenUsageModel(Base):
     provider: Mapped[str] = mapped_column(String(10), nullable=False, default="bedrock")
     is_fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    estimated_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    input_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    output_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    cache_write_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    cache_read_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    pricing_region: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="ap-northeast-2"
+    )
+    pricing_model_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default=""
+    )
+    pricing_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pricing_input_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    pricing_output_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    pricing_cache_write_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
+    pricing_cache_read_price_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, default=Decimal("0")
+    )
 
     __table_args__ = (
         Index("idx_token_usage_timestamp", "timestamp"),
@@ -97,6 +143,23 @@ class UsageAggregateModel(Base):
     total_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_cache_write_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_cache_read_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    total_input_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, default=Decimal("0")
+    )
+    total_output_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, default=Decimal("0")
+    )
+    total_cache_write_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, default=Decimal("0")
+    )
+    total_cache_read_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, default=Decimal("0")
+    )
+    total_estimated_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(15, 6), nullable=False, default=Decimal("0")
+    )
 
     __table_args__ = (
         Index("idx_usage_aggregates_lookup", "bucket_type", "bucket_start", "user_id"),

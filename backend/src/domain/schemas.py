@@ -98,12 +98,43 @@ class UsageQueryParams(BaseModel):
     end_time: datetime | None = None
 
 
+class ModelPricingResponse(BaseModel):
+    model_id: str
+    region: str
+    input_price: str
+    output_price: str
+    cache_write_price: str
+    cache_read_price: str
+    effective_date: str
+
+
+class PricingListResponse(BaseModel):
+    models: list[ModelPricingResponse]
+    region: str
+
+
+class CostBreakdownByModel(BaseModel):
+    model_id: str
+    total_cost_usd: str
+    input_cost_usd: str
+    output_cost_usd: str
+    cache_write_cost_usd: str
+    cache_read_cost_usd: str
+
+
 class UsageBucket(BaseModel):
     bucket_start: datetime
     requests: int
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    cache_write_tokens: int
+    cache_read_tokens: int
+    input_cost_usd: str
+    output_cost_usd: str
+    cache_write_cost_usd: str
+    cache_read_cost_usd: str
+    estimated_cost_usd: str
 
 
 class UsageResponse(BaseModel):
@@ -112,6 +143,14 @@ class UsageResponse(BaseModel):
     total_input_tokens: int
     total_output_tokens: int
     total_tokens: int
+    total_cache_write_tokens: int
+    total_cache_read_tokens: int
+    total_input_cost_usd: str
+    total_output_cost_usd: str
+    total_cache_write_cost_usd: str
+    total_cache_read_cost_usd: str
+    estimated_cost_usd: str
+    cost_breakdown: list[CostBreakdownByModel]
 
 
 class UsageTopUser(BaseModel):

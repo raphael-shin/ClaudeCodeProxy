@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from .enums import UserStatus, KeyStatus
@@ -55,6 +56,18 @@ class TokenUsage:
     provider: str
     is_fallback: bool
     latency_ms: int
+    estimated_cost_usd: Decimal
+    input_cost_usd: Decimal
+    output_cost_usd: Decimal
+    cache_write_cost_usd: Decimal
+    cache_read_cost_usd: Decimal
+    pricing_region: str
+    pricing_model_id: str
+    pricing_effective_date: date | None
+    pricing_input_price_per_million: Decimal
+    pricing_output_price_per_million: Decimal
+    pricing_cache_write_price_per_million: Decimal
+    pricing_cache_read_price_per_million: Decimal
 
 
 @dataclass
@@ -68,3 +81,10 @@ class UsageAggregate:
     total_input_tokens: int
     total_output_tokens: int
     total_tokens: int
+    total_cache_write_tokens: int
+    total_cache_read_tokens: int
+    total_input_cost_usd: Decimal
+    total_output_cost_usd: Decimal
+    total_cache_write_cost_usd: Decimal
+    total_cache_read_cost_usd: Decimal
+    total_estimated_cost_usd: Decimal

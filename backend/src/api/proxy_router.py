@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db import get_session
+from ..db import get_session, async_session_factory
 from ..config import get_settings
 from ..domain import AnthropicRequest, AnthropicError, AnthropicCountTokensResponse, RETRYABLE_ERRORS
 from ..logging import get_logger
@@ -131,7 +131,11 @@ async def proxy_messages(
     plan_adapter = PlanAdapter(headers=outgoing_headers)
     bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
     proxy_router = ProxyRouter(plan_adapter, bedrock_adapter)
-    usage_recorder = UsageRecorder(token_usage_repo, usage_aggregate_repo)
+    usage_recorder = UsageRecorder(
+        token_usage_repo,
+        usage_aggregate_repo,
+        session_factory=async_session_factory,
+    )
 
     try:
         # Route request

@@ -130,8 +130,44 @@ npm run dev
 ### Admin Dashboard Features
 
 - Token overview dashboard with throughput, cumulative usage, and top users
+- Cost visibility dashboard with total cost, cache cost, model breakdown, and cost trend (KST-based ranges)
 - Create users and issue access keys (keys are shown once on creation)
 - Register Bedrock credentials per access key and see linked status in the list
+
+### Cost Visibility & Pricing
+
+- Costs are calculated on request completion and stored with a pricing snapshot (non-retroactive).
+- Usage filters accept `period=day|week|month` or `start_date/end_date` (YYYY-MM-DD) in KST (UTC+9). Week starts on Sunday.
+- Pricing can be updated via `PROXY_MODEL_PRICING` and reloaded with `POST /api/pricing/reload`.
+
+Example `PROXY_MODEL_PRICING`:
+```json
+{
+  "ap-northeast-2": {
+    "claude-opus-4-5": {
+      "input_price_per_million": "5.00",
+      "output_price_per_million": "25.00",
+      "cache_write_price_per_million": "6.25",
+      "cache_read_price_per_million": "0.50",
+      "effective_date": "2025-01-01"
+    },
+    "claude-sonnet-4-5": {
+      "input_price_per_million": "3.00",
+      "output_price_per_million": "15.00",
+      "cache_write_price_per_million": "3.75",
+      "cache_read_price_per_million": "0.30",
+      "effective_date": "2025-01-01"
+    },
+    "claude-haiku-4-5": {
+      "input_price_per_million": "1.00",
+      "output_price_per_million": "5.00",
+      "cache_write_price_per_million": "1.25",
+      "cache_read_price_per_million": "0.10",
+      "effective_date": "2025-01-01"
+    }
+  }
+}
+```
 
 ## Deployment
 
@@ -184,6 +220,7 @@ Option B — Manual upload via Amplify Console:
 | `PROXY_PLAN_API_KEY` | No | Default Anthropic API key |
 | `PROXY_BEDROCK_DEFAULT_MODEL` | No | Default Bedrock model ID |
 | `PROXY_BEDROCK_REGION` | No | AWS region for Bedrock (default: ap-northeast-2) |
+| `PROXY_MODEL_PRICING` | No | JSON pricing config for cost visibility (per region/model) |
 
 ## Tech Stack
 
