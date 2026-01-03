@@ -71,7 +71,12 @@ async def proxy_messages(
         try:
             result = await plan_adapter.stream(request)
             if isinstance(result, AdapterError):
-                if ctx.has_bedrock_key and result.retryable and result.error_type in RETRYABLE_ERRORS:
+                should_fallback = (
+                    ctx.has_bedrock_key
+                    and result.retryable
+                    and result.error_type in RETRYABLE_ERRORS
+                )
+                if should_fallback:
                     bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
                     bedrock_result = await bedrock_adapter.stream(ctx, request)
                     if isinstance(bedrock_result, AdapterError):
@@ -178,7 +183,11 @@ async def proxy_count_tokens(
     outgoing_headers = _extract_outgoing_headers(raw_request)
 
     settings = get_settings()
-    if "x-api-key" not in outgoing_headers and "Authorization" not in outgoing_headers and not settings.plan_api_key:
+    has_auth_header = (
+        "x-api-key" in outgoing_headers or "Authorization" in outgoing_headers
+    )
+    has_plan_key = bool(settings.plan_api_key)
+    if not has_auth_header and not has_plan_key:
         error_body = AnthropicError(
             error={
                 "type": "authentication_error",

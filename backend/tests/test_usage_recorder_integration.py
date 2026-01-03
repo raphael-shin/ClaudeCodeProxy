@@ -22,6 +22,7 @@ from src.domain.cost_calculator import CostCalculator
 from src.proxy.context import RequestContext
 from src.proxy.router import ProxyResponse
 from src.proxy.usage import UsageRecorder, _get_bucket_start
+from src.proxy import usage as usage_module
 
 
 @dataclass
@@ -64,12 +65,46 @@ class FakeUsageAggregateRepository:
         self.calls.append(kwargs)
 
 
+class DummySession:
+    def __init__(self) -> None:
+        self.commit_called = False
+        self.rollback_called = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return False
+
+    async def commit(self) -> None:
+        self.commit_called = True
+
+    async def rollback(self) -> None:
+        self.rollback_called = True
+
+
+def _capture_task_names(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    task_names: list[str] = []
+
+    def _fake_create_task(coro):
+        task_names.append(getattr(getattr(coro, "cr_code", None), "co_name", type(coro).__name__))
+        if hasattr(coro, "close"):
+            coro.close()
+        return None
+
+    monkeypatch.setattr(usage_module.asyncio, "create_task", _fake_create_task)
+    return task_names
+
+
 class TestRecordMethodFlow:
     """Test the record() method's conditional flow."""
 
     @pytest.mark.asyncio
-    async def test_record_skips_db_for_non_bedrock_provider(self) -> None:
+    async def test_record_skips_db_for_non_bedrock_provider(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Verify record() does not write to DB for non-bedrock responses."""
+        task_names = _capture_task_names(monkeypatch)
         token_repo = FakeTokenUsageRepository()
         agg_repo = FakeUsageAggregateRepository()
         recorder = UsageRecorder(token_repo, agg_repo, metrics_emitter=DummyMetricsEmitter())
@@ -94,18 +129,16 @@ class TestRecordMethodFlow:
 
         await recorder.record(ctx, response, latency_ms=100, model=ctx.bedrock_model)
 
-        # Give async task time to complete (if any)
-        import asyncio
-
-        await asyncio.sleep(0.01)
-
-        # No DB writes should occur for plan provider
+        assert task_names == ["emit"]
         assert len(token_repo.calls) == 0
         assert len(agg_repo.calls) == 0
 
     @pytest.mark.asyncio
-    async def test_record_skips_db_for_failed_responses(self) -> None:
+    async def test_record_skips_db_for_failed_responses(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Verify record() does not write to DB for failed responses."""
+        task_names = _capture_task_names(monkeypatch)
         token_repo = FakeTokenUsageRepository()
         agg_repo = FakeUsageAggregateRepository()
         recorder = UsageRecorder(token_repo, agg_repo, metrics_emitter=DummyMetricsEmitter())
@@ -130,16 +163,16 @@ class TestRecordMethodFlow:
 
         await recorder.record(ctx, response, latency_ms=100, model=ctx.bedrock_model)
 
-        import asyncio
-
-        await asyncio.sleep(0.01)
-
+        assert task_names == ["emit"]
         assert len(token_repo.calls) == 0
         assert len(agg_repo.calls) == 0
 
     @pytest.mark.asyncio
-    async def test_record_skips_db_when_no_usage_data(self) -> None:
+    async def test_record_skips_db_when_no_usage_data(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Verify record() does not write to DB when usage is None."""
+        task_names = _capture_task_names(monkeypatch)
         token_repo = FakeTokenUsageRepository()
         agg_repo = FakeUsageAggregateRepository()
         recorder = UsageRecorder(token_repo, agg_repo, metrics_emitter=DummyMetricsEmitter())
@@ -164,12 +197,40 @@ class TestRecordMethodFlow:
 
         await recorder.record(ctx, response, latency_ms=100, model=ctx.bedrock_model)
 
-        import asyncio
-
-        await asyncio.sleep(0.01)
-
+        assert task_names == ["emit"]
         assert len(token_repo.calls) == 0
         assert len(agg_repo.calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_record_schedules_metrics_and_usage_tasks(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        task_names = _capture_task_names(monkeypatch)
+        token_repo = FakeTokenUsageRepository()
+        agg_repo = FakeUsageAggregateRepository()
+        recorder = UsageRecorder(token_repo, agg_repo, metrics_emitter=DummyMetricsEmitter())
+
+        ctx = RequestContext(
+            request_id="req-4",
+            user_id=uuid4(),
+            access_key_id=uuid4(),
+            access_key_prefix="ak_test",
+            bedrock_region="ap-northeast-2",
+            bedrock_model="anthropic.claude-sonnet-4-5-20250514",
+            has_bedrock_key=True,
+        )
+        response = ProxyResponse(
+            success=True,
+            response=None,
+            usage=AnthropicUsage(input_tokens=100, output_tokens=50),
+            provider="bedrock",
+            is_fallback=False,
+            status_code=200,
+        )
+
+        await recorder.record(ctx, response, latency_ms=100, model=ctx.bedrock_model)
+
+        assert set(task_names) == {"emit", "_record_usage_with_cost"}
 
 
 class TestRecordUsageWithCostFlow:
@@ -292,6 +353,119 @@ class TestRecordUsageWithCostFlow:
         for agg_call in agg_repo.calls:
             assert agg_call["cache_write_tokens"] == 0
             assert agg_call["cache_read_tokens"] == 0
+
+
+class TestSessionFactoryFlow:
+    """Test session factory commit/rollback behavior."""
+
+    @pytest.mark.asyncio
+    async def test_commits_session_on_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        pricing = ModelPricing(
+            model_id="claude-sonnet-4-5",
+            region="ap-northeast-2",
+            input_price_per_million=Decimal("3.00"),
+            output_price_per_million=Decimal("15.00"),
+            cache_write_price_per_million=Decimal("3.75"),
+            cache_read_price_per_million=Decimal("0.30"),
+            effective_date=date(2025, 1, 1),
+        )
+        monkeypatch.setattr(PricingConfig, "get_pricing", lambda *_args, **_kwargs: pricing)
+
+        sessions: list[DummySession] = []
+
+        def session_factory():
+            session = DummySession()
+            sessions.append(session)
+            return session
+
+        token_repo = FakeTokenUsageRepository()
+        agg_repo = FakeUsageAggregateRepository()
+        recorder = UsageRecorder(
+            token_repo,
+            agg_repo,
+            metrics_emitter=DummyMetricsEmitter(),
+            session_factory=session_factory,
+        )
+        monkeypatch.setattr(recorder, "_persist_usage", AsyncMock())
+
+        ctx = RequestContext(
+            request_id="req-session-1",
+            user_id=uuid4(),
+            access_key_id=uuid4(),
+            access_key_prefix="ak_test",
+            bedrock_region="ap-northeast-2",
+            bedrock_model="anthropic.claude-sonnet-4-5-20250514",
+            has_bedrock_key=True,
+        )
+        usage = AnthropicUsage(input_tokens=100, output_tokens=50)
+        response = ProxyResponse(
+            success=True,
+            response=None,
+            usage=usage,
+            provider="bedrock",
+            is_fallback=False,
+            status_code=200,
+        )
+
+        await recorder._record_usage_with_cost(ctx, response, latency_ms=50, model=ctx.bedrock_model)
+
+        assert sessions[0].commit_called is True
+        assert sessions[0].rollback_called is False
+        recorder._persist_usage.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rolls_back_session_on_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        pricing = ModelPricing(
+            model_id="claude-sonnet-4-5",
+            region="ap-northeast-2",
+            input_price_per_million=Decimal("3.00"),
+            output_price_per_million=Decimal("15.00"),
+            cache_write_price_per_million=Decimal("3.75"),
+            cache_read_price_per_million=Decimal("0.30"),
+            effective_date=date(2025, 1, 1),
+        )
+        monkeypatch.setattr(PricingConfig, "get_pricing", lambda *_args, **_kwargs: pricing)
+
+        sessions: list[DummySession] = []
+
+        def session_factory():
+            session = DummySession()
+            sessions.append(session)
+            return session
+
+        token_repo = FakeTokenUsageRepository()
+        agg_repo = FakeUsageAggregateRepository()
+        recorder = UsageRecorder(
+            token_repo,
+            agg_repo,
+            metrics_emitter=DummyMetricsEmitter(),
+            session_factory=session_factory,
+        )
+        monkeypatch.setattr(recorder, "_persist_usage", AsyncMock(side_effect=RuntimeError("fail")))
+
+        ctx = RequestContext(
+            request_id="req-session-2",
+            user_id=uuid4(),
+            access_key_id=uuid4(),
+            access_key_prefix="ak_test",
+            bedrock_region="ap-northeast-2",
+            bedrock_model="anthropic.claude-sonnet-4-5-20250514",
+            has_bedrock_key=True,
+        )
+        usage = AnthropicUsage(input_tokens=100, output_tokens=50)
+        response = ProxyResponse(
+            success=True,
+            response=None,
+            usage=usage,
+            provider="bedrock",
+            is_fallback=False,
+            status_code=200,
+        )
+
+        await recorder._record_usage_with_cost(ctx, response, latency_ms=50, model=ctx.bedrock_model)
+
+        assert sessions[0].rollback_called is True
+        assert sessions[0].commit_called is False
 
 
 class TestCalculateCostSafe:

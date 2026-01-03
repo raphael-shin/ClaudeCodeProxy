@@ -20,8 +20,7 @@ class MonitoringStack(Stack):
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
-        # Extract cluster name from service ARN
-        # Service ARN format: arn:aws:ecs:region:account:service/cluster-name/service-name
+        # Parse cluster name from ECS service ARN (arn:...:service/cluster-name/service-name).
         cluster_name = Fn.select(0, Fn.split("/", Fn.select(5, Fn.split(":", service_arn))))
 
         namespace = "ClaudeCodeProxy"
@@ -69,7 +68,6 @@ class MonitoringStack(Stack):
             ),
         )
 
-        # ECS Service metrics using cluster and service name
         dashboard.add_widgets(
             cloudwatch.GraphWidget(
                 title="ECS CPU Utilization",

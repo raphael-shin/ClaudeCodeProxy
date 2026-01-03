@@ -29,10 +29,12 @@ def _resolve_time_range(
     now_utc = now_utc or datetime.now(timezone.utc)
     now_kst = now_utc.astimezone(KST)
 
-    if (start_date and not end_date) or (end_date and not start_date):
+    has_start = start_date is not None
+    has_end = end_date is not None
+    if has_start ^ has_end:
         raise HTTPException(status_code=400, detail="Invalid date range")
 
-    if start_date and end_date:
+    if has_start and has_end:
         start_kst = datetime.combine(start_date, time.min, tzinfo=KST)
         end_kst = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=KST)
     elif period:

@@ -352,3 +352,63 @@ class TestMultipleIncrementAccumulation:
 
         # Each increment should have been executed
         assert mock_session.execute.call_count == 3
+
+
+class TestGetTopUsers:
+    """Test get_top_users() aggregation logic."""
+
+    @pytest.mark.asyncio
+    async def test_get_top_users_maps_null_values(self) -> None:
+        """Verify NULL aggregates are mapped to zero."""
+        user_id = uuid4()
+        row = MagicMock()
+        row.user_id = user_id
+        row.name = "alpha"
+        row.total_tokens = None
+        row.total_requests = None
+
+        mock_result = MagicMock()
+        mock_result.__iter__ = MagicMock(return_value=iter([row]))
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        repo = UsageAggregateRepository(mock_session)
+
+        results = await repo.get_top_users(
+            bucket_type="day",
+            start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            end_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
+            limit=5,
+        )
+
+        assert results == [
+            {
+                "user_id": user_id,
+                "name": "alpha",
+                "total_tokens": 0,
+                "total_requests": 0,
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_get_top_users_includes_limit_and_ordering(self) -> None:
+        """Verify query includes ORDER BY and LIMIT."""
+        mock_result = MagicMock()
+        mock_result.__iter__ = MagicMock(return_value=iter([]))
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        repo = UsageAggregateRepository(mock_session)
+
+        await repo.get_top_users(
+            bucket_type="hour",
+            start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            end_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
+            limit=3,
+        )
+
+        executed_query = mock_session.execute.call_args[0][0]
+        compiled = str(executed_query.compile(compile_kwargs={"literal_binds": False}))
+
+        assert "ORDER BY" in compiled
+        assert "LIMIT" in compiled

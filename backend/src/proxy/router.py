@@ -10,17 +10,17 @@ logger = get_logger(__name__)
 
 # Map internal error types to Anthropic API error types
 ANTHROPIC_ERROR_TYPE_MAP = {
-    ErrorType.RATE_LIMIT: "rate_limit_error",
-    ErrorType.USAGE_LIMIT: "rate_limit_error",
-    ErrorType.SERVER_ERROR: "api_error",
-    ErrorType.CLIENT_ERROR: "invalid_request_error",
-    ErrorType.TIMEOUT: "overloaded_error",
-    ErrorType.NETWORK_ERROR: "api_error",
-    ErrorType.BEDROCK_AUTH_ERROR: "authentication_error",
+    ErrorType.RATE_LIMIT:             "rate_limit_error",
+    ErrorType.USAGE_LIMIT:            "rate_limit_error",
+    ErrorType.SERVER_ERROR:           "api_error",
+    ErrorType.CLIENT_ERROR:           "invalid_request_error",
+    ErrorType.TIMEOUT:                "overloaded_error",
+    ErrorType.NETWORK_ERROR:          "api_error",
+    ErrorType.BEDROCK_AUTH_ERROR:     "authentication_error",
     ErrorType.BEDROCK_QUOTA_EXCEEDED: "rate_limit_error",
-    ErrorType.BEDROCK_VALIDATION: "invalid_request_error",
-    ErrorType.BEDROCK_MODEL_ERROR: "api_error",
-    ErrorType.BEDROCK_UNAVAILABLE: "overloaded_error",
+    ErrorType.BEDROCK_VALIDATION:     "invalid_request_error",
+    ErrorType.BEDROCK_MODEL_ERROR:    "api_error",
+    ErrorType.BEDROCK_UNAVAILABLE:    "overloaded_error",
 }
 
 
@@ -53,73 +53,33 @@ class ProxyRouter:
         self, ctx: RequestContext, request: AnthropicRequest
     ) -> ProxyResponse:
         key_id = str(ctx.access_key_id)
-        providers_tried = []
         cb = get_proxy_deps().circuit_breaker
+        plan_attempted = False
 
-        # Check circuit breaker
         if not cb.is_open(key_id):
-            # Try Plan first
-            providers_tried.append("plan")
+            plan_attempted = True
             result = await self._plan.invoke(ctx, request)
 
             if isinstance(result, AdapterResponse):
                 cb.record_success(key_id)
-                return ProxyResponse(
-                    success=True,
-                    response=result.response,
-                    usage=result.usage,
-                    provider="plan",
-                    is_fallback=False,
-                    status_code=200,
-                )
+                return self._success_response("plan", result, is_fallback=False)
 
-            # Record failure for circuit breaker
             cb.record_failure(key_id, result.error_type)
 
-            # Check if can fallback
-            if not result.retryable or result.error_type not in RETRYABLE_ERRORS:
-                return ProxyResponse(
-                    success=False,
-                    response=None,
-                    usage=None,
-                    provider="plan",
-                    is_fallback=False,
-                    status_code=result.status_code,
-                    error_type=_map_error_type(result.error_type),
-                    error_message=result.message,
-                )
+            should_fallback = result.retryable and result.error_type in RETRYABLE_ERRORS
+            if not should_fallback:
+                return self._error_response("plan", result, is_fallback=False)
         else:
             logger.info("plan_skipped_circuit_open", access_key_id=key_id)
 
-        # Try Bedrock (fallback or circuit open)
         if ctx.has_bedrock_key:
-            providers_tried.append("bedrock")
-            is_fallback = "plan" in providers_tried
-
             result = await self._bedrock.invoke(ctx, request)
 
             if isinstance(result, AdapterResponse):
-                return ProxyResponse(
-                    success=True,
-                    response=result.response,
-                    usage=result.usage,
-                    provider="bedrock",
-                    is_fallback=is_fallback,
-                    status_code=200,
-                )
+                return self._success_response("bedrock", result, is_fallback=plan_attempted)
 
-            return ProxyResponse(
-                success=False,
-                response=None,
-                usage=None,
-                provider="bedrock",
-                is_fallback=is_fallback,
-                status_code=result.status_code,
-                error_type=_map_error_type(result.error_type),
-                error_message=result.message,
-            )
+            return self._error_response("bedrock", result, is_fallback=plan_attempted)
 
-        # No Bedrock key available
         return ProxyResponse(
             success=False,
             response=None,
@@ -129,4 +89,30 @@ class ProxyRouter:
             status_code=503,
             error_type="overloaded_error",
             error_message="Service unavailable and no fallback configured",
+        )
+
+    def _success_response(
+        self, provider: str, result: AdapterResponse, is_fallback: bool
+    ) -> ProxyResponse:
+        return ProxyResponse(
+            success=True,
+            response=result.response,
+            usage=result.usage,
+            provider=provider,
+            is_fallback=is_fallback,
+            status_code=200,
+        )
+
+    def _error_response(
+        self, provider: str, error: AdapterError, is_fallback: bool
+    ) -> ProxyResponse:
+        return ProxyResponse(
+            success=False,
+            response=None,
+            usage=None,
+            provider=provider,
+            is_fallback=is_fallback,
+            status_code=error.status_code,
+            error_type=_map_error_type(error.error_type),
+            error_message=error.message,
         )

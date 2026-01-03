@@ -28,7 +28,6 @@ class ComputeStack(Stack):
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
-        # Build container image from backend directory
         image_asset = ecr_assets.DockerImageAsset(
             self,
             "BackendImage",
@@ -36,7 +35,7 @@ class ComputeStack(Stack):
             platform=ecr_assets.Platform.LINUX_ARM64,
         )
 
-        # Create execution role for ECS tasks
+        # Execution role lets ECS pull the image and publish logs.
         execution_role = iam.Role(
             self,
             "ExecutionRole",
@@ -48,13 +47,13 @@ class ComputeStack(Stack):
             ],
         )
 
-        # Create task role with required permissions
         task_role = iam.Role(
             self,
             "TaskRole",
             assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
         )
 
+        # Task role needs KMS, metrics, and Bedrock permissions at runtime.
         task_role.add_to_policy(
             iam.PolicyStatement(
                 actions=["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey"],
@@ -74,7 +73,7 @@ class ComputeStack(Stack):
                 resources=["*"],
             )
         )
-        # Grant secrets access to task role
+        # Secrets read access is required for runtime config values.
         db_secret.grant_read(task_role)
         secrets.key_hasher_secret.grant_read(task_role)
         secrets.jwt_secret.grant_read(task_role)
@@ -133,17 +132,14 @@ class ComputeStack(Stack):
 
         fargate_service.target_group.configure_health_check(path="/health")
 
-        # Store service ARN for monitoring
         self.service_name = fargate_service.service.service_name
         self.service_arn = fargate_service.service.service_arn
 
-        # Export load balancer for CloudFront integration
         self.load_balancer = fargate_service.load_balancer
 
-        # Export backend URL for frontend integration
         self.backend_url = f"http://{fargate_service.load_balancer.load_balancer_dns_name}"
 
-        # Create origin verify secret for CloudFront to ALB verification
+        # Shared secret restricts ALB access to CloudFront traffic.
         self.origin_verify_secret = secretsmanager.Secret(
             self,
             "OriginVerifySecret",
@@ -155,11 +151,9 @@ class ComputeStack(Stack):
             ),
         )
 
-        # Get the listener from the fargate service
         listener = fargate_service.listener
 
-        # Add listener rule to validate X-Origin-Verify header from CloudFront
-        # Requests with valid header are forwarded to the target group
+        # Require X-Origin-Verify header; default action denies direct ALB access.
         elbv2.ApplicationListenerRule(
             self,
             "ValidOriginRule",
@@ -174,8 +168,6 @@ class ComputeStack(Stack):
             target_groups=[fargate_service.target_group],
         )
 
-        # Modify default action to return 403 for requests without valid header
-        # This ensures only CloudFront traffic can reach the ALB
         cfn_listener = listener.node.default_child
         cfn_listener.add_property_override(
             "DefaultActions",
@@ -191,7 +183,6 @@ class ComputeStack(Stack):
             ],
         )
 
-        # Output the secret ARN for reference
         CfnOutput(
             self,
             "OriginVerifySecretArn",

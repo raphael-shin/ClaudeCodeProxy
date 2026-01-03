@@ -41,19 +41,15 @@ class DummyMetricsEmitter:
         return None
 
 
-# Feature: cost-visibility, Property 4: Token Usage Recording Completeness
-# Feature: cost-visibility, Property 9: Aggregate Cache Token Tracking
-@pytest.mark.asyncio
-async def test_record_usage_with_cost_stores_snapshot_and_aggregates(monkeypatch: pytest.MonkeyPatch) -> None:
-    pricing = ModelPricing(
-        model_id="claude-opus-4-5",
-        region="ap-northeast-2",
-        input_price_per_million=Decimal("1.00"),
-        output_price_per_million=Decimal("2.00"),
-        cache_write_price_per_million=Decimal("3.00"),
-        cache_read_price_per_million=Decimal("4.00"),
-        effective_date=date(2025, 1, 1),
-    )
+def _build_recorder_context(
+    monkeypatch: pytest.MonkeyPatch, pricing: ModelPricing
+) -> tuple[
+    UsageRecorder,
+    FakeTokenUsageRepository,
+    FakeUsageAggregateRepository,
+    RequestContext,
+    ProxyResponse,
+]:
     monkeypatch.setattr(PricingConfig, "get_pricing", lambda *_args, **_kwargs: pricing)
 
     token_repo = FakeTokenUsageRepository()
@@ -84,6 +80,26 @@ async def test_record_usage_with_cost_stores_snapshot_and_aggregates(monkeypatch
         status_code=200,
     )
 
+    return recorder, token_repo, agg_repo, ctx, response
+
+
+# Feature: cost-visibility, Property 4: Token Usage Recording Completeness
+@pytest.mark.asyncio
+async def test_record_usage_with_cost_stores_pricing_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pricing = ModelPricing(
+        model_id="claude-opus-4-5",
+        region="ap-northeast-2",
+        input_price_per_million=Decimal("1.00"),
+        output_price_per_million=Decimal("2.00"),
+        cache_write_price_per_million=Decimal("3.00"),
+        cache_read_price_per_million=Decimal("4.00"),
+        effective_date=date(2025, 1, 1),
+    )
+
+    recorder, token_repo, _agg_repo, ctx, response = _build_recorder_context(monkeypatch, pricing)
+
     await recorder._record_usage_with_cost(ctx, response, latency_ms=123, model=ctx.bedrock_model)
 
     assert len(token_repo.calls) == 1
@@ -107,6 +123,33 @@ async def test_record_usage_with_cost_stores_snapshot_and_aggregates(monkeypatch
     assert call["pricing_output_price_per_million"] == Decimal("2.00")
     assert call["pricing_cache_write_price_per_million"] == Decimal("3.00")
     assert call["pricing_cache_read_price_per_million"] == Decimal("4.00")
+
+
+# Feature: cost-visibility, Property 9: Aggregate Cache Token Tracking
+@pytest.mark.asyncio
+async def test_record_usage_with_cost_increments_aggregates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pricing = ModelPricing(
+        model_id="claude-opus-4-5",
+        region="ap-northeast-2",
+        input_price_per_million=Decimal("1.00"),
+        output_price_per_million=Decimal("2.00"),
+        cache_write_price_per_million=Decimal("3.00"),
+        cache_read_price_per_million=Decimal("4.00"),
+        effective_date=date(2025, 1, 1),
+    )
+    recorder, _token_repo, agg_repo, ctx, response = _build_recorder_context(monkeypatch, pricing)
+
+    await recorder._record_usage_with_cost(ctx, response, latency_ms=123, model=ctx.bedrock_model)
+
+    expected_costs = CostCalculator.calculate_cost(
+        input_tokens=100,
+        output_tokens=50,
+        cache_write_tokens=5,
+        cache_read_tokens=10,
+        pricing=pricing,
+    )
 
     assert len(agg_repo.calls) == 5
     for agg_call in agg_repo.calls:

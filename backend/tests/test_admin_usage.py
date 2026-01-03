@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import uuid4
 import sys
@@ -109,3 +109,77 @@ def test_resolve_time_range_week_starts_sunday_kst() -> None:
 
     assert start_utc == datetime(2025, 1, 4, 15, 0, tzinfo=timezone.utc)
     assert end_utc == now_utc
+
+
+class FakeTopUsersRepository:
+    last_call: dict | None = None
+
+    def __init__(self, _session) -> None:
+        return None
+
+    async def get_top_users(self, **kwargs):
+        FakeTopUsersRepository.last_call = kwargs
+        return [
+            {
+                "user_id": uuid4(),
+                "name": "alpha",
+                "total_tokens": 1200,
+                "total_requests": 12,
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_get_top_users_defaults_to_last_24_hours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2025, 1, 2, 3, 4, 5)
+
+    class FixedDateTime:
+        @classmethod
+        def utcnow(cls):
+            return fixed_now
+
+    monkeypatch.setattr(admin_usage, "UsageAggregateRepository", FakeTopUsersRepository)
+    monkeypatch.setattr(admin_usage, "datetime", FixedDateTime)
+
+    await admin_usage.get_top_users(bucket_type="hour", session=None)
+
+    assert FakeTopUsersRepository.last_call is not None
+    assert FakeTopUsersRepository.last_call["end_time"] == fixed_now
+    assert FakeTopUsersRepository.last_call["start_time"] == fixed_now - timedelta(hours=24)
+    assert FakeTopUsersRepository.last_call["bucket_type"] == "hour"
+    assert FakeTopUsersRepository.last_call["limit"] == 10
+
+
+@pytest.mark.asyncio
+async def test_get_top_users_maps_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ResultRepo:
+        def __init__(self, _session) -> None:
+            return None
+
+        async def get_top_users(self, **_kwargs):
+            return [
+                {
+                    "user_id": uuid4(),
+                    "name": "bravo",
+                    "total_tokens": 450,
+                    "total_requests": 3,
+                }
+            ]
+
+    monkeypatch.setattr(admin_usage, "UsageAggregateRepository", ResultRepo)
+
+    start = datetime(2025, 1, 1, 0, 0)
+    end = datetime(2025, 1, 2, 0, 0)
+    results = await admin_usage.get_top_users(
+        bucket_type="day",
+        start_time=start,
+        end_time=end,
+        limit=5,
+        session=None,
+    )
+
+    assert results[0].name == "bravo"
+    assert results[0].total_tokens == 450
+    assert results[0].total_requests == 3

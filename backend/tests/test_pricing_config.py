@@ -120,6 +120,24 @@ def test_reload_updates_after_env_change(monkeypatch: pytest.MonkeyPatch) -> Non
     assert second_pricing.effective_date == date(2025, 3, 1)
 
 
+def test_reload_missing_fields_falls_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    pricing_payload = {
+        "ap-northeast-2": {
+            "claude-opus-4-5": {
+                "input_price_per_million": "7.00",
+            }
+        }
+    }
+    monkeypatch.setenv("PROXY_MODEL_PRICING", json.dumps(pricing_payload))
+
+    PricingConfig.reload()
+    pricing = PricingConfig.get_pricing("claude-opus-4-5")
+
+    assert pricing is not None
+    assert pricing.input_price_per_million == Decimal("5.00")
+    assert pricing.output_price_per_million == Decimal("25.00")
+
+
 def test_invalid_env_json_falls_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PROXY_MODEL_PRICING", "{")
 
@@ -129,6 +147,13 @@ def test_invalid_env_json_falls_back_to_defaults(monkeypatch: pytest.MonkeyPatch
     assert pricing is not None
     assert pricing.input_price_per_million == Decimal("5.00")
     assert pricing.output_price_per_million == Decimal("25.00")
+
+
+def test_get_all_pricing_falls_back_to_default_region() -> None:
+    pricing_list = PricingConfig.get_all_pricing(region="eu-west-1")
+    regions = {pricing.region for pricing in pricing_list}
+
+    assert regions == {"ap-northeast-2"}
 
 
 # Feature: cost-visibility, Property 7: Model ID Normalization Consistency

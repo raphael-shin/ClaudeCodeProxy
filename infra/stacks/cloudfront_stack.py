@@ -22,10 +22,9 @@ class CloudFrontStack(Stack):
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
-        # Store reference to the origin verify secret
         self.origin_verify_secret = origin_verify_secret
 
-        # CloudFront distribution with custom origin header
+        # Attach a shared header so ALB can verify CloudFront-originated traffic.
         self.distribution = cloudfront.Distribution(
             self,
             "AdminDistribution",
@@ -48,7 +47,6 @@ class CloudFrontStack(Stack):
             enabled=True,
         )
 
-        # Outputs
         CfnOutput(
             self,
             "DistributionDomainName",

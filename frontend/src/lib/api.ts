@@ -30,13 +30,15 @@ class ApiClient {
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.getToken()) {
-      headers['Authorization'] = `Bearer ${this.getToken()}`;
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const res = await fetch(`${API_URL}${path}`, { ...options, headers });
 
     if (res.status === 401) {
+      // Force re-auth when the token is invalid or expired.
       this.clearToken();
       if (typeof window !== 'undefined') {
         window.location.href = '/login';

@@ -24,7 +24,6 @@ class AmplifyStack(Stack):
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
-        # Create Amplify App
         self.amplify_app = amplify.App(
             self,
             "FrontendApp",
@@ -78,14 +77,12 @@ class AmplifyStack(Stack):
             platform=amplify.Platform.WEB,
         )
 
-        # Add branch
         main_branch = self.amplify_app.add_branch(
             branch,
             auto_build=True,
             stage="PRODUCTION" if branch == "main" else "DEVELOPMENT",
         )
 
-        # Outputs
         CfnOutput(
             self,
             "AmplifyAppId",
@@ -108,10 +105,7 @@ class AmplifyStack(Stack):
         )
 
     def _extract_github_owner(self, url: str) -> str:
-        """Extract GitHub owner from repository URL."""
-        # Handle both HTTPS and SSH URLs
-        # https://github.com/owner/repo.git
-        # git@github.com:owner/repo.git
+        """Supports HTTPS and SSH GitHub URLs."""
         if "github.com" in url:
             if url.startswith("git@"):
                 parts = url.split(":")[1].split("/")
@@ -121,7 +115,7 @@ class AmplifyStack(Stack):
         raise ValueError(f"Invalid GitHub URL: {url}")
 
     def _extract_github_repo(self, url: str) -> str:
-        """Extract GitHub repository name from URL."""
+        """Parses repository name from GitHub HTTPS/SSH URLs."""
         if "github.com" in url:
             if url.startswith("git@"):
                 parts = url.split(":")[1].split("/")
