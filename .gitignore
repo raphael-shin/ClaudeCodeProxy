@@ -52,3 +52,9 @@ Thumbs.db
 # Misc
 *.log
 *.tmp
+
+# AI agent directories
+.kiro/
+.claude/
+.codex/
+.gemini/
