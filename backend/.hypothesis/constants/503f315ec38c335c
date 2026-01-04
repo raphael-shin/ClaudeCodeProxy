@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/repositories/usage_repository.py
+# hypothesis_version: 6.148.8
+
+['0', 'access_key_id', 'ap-northeast-2', 'bedrock', 'bucket_start', 'bucket_type', 'cache_read_cost_usd', 'cache_write_cost_usd', 'input_cost_usd', 'month', 'name', 'output_cost_usd', 'pricing_model_id', 'total_cost_usd', 'total_input_cost_usd', 'total_input_tokens', 'total_output_tokens', 'total_requests', 'total_tokens', 'user_id']

@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/plan_adapter.py
+# hypothesis_version: 6.148.8
+
+[10.0, 30.0, 200, 429, 500, 502, 503, 504, 600, '2023-06-01', 'POST', 'Rate limit exceeded', 'Request timeout', 'Server error', 'Simulated rate limit', 'Usage limit exceeded', 'anthropic-beta', 'anthropic-version', 'application/json', 'authorization', 'content-type', 'ignore', 'original_model', 'plan_request', 'timeout', 'usage', 'x-api-key']

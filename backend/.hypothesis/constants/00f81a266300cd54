@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/api/admin_auth.py
+# hypothesis_version: 6.148.8
+
+['/admin/auth', '/login', 'Basic', 'HS256', 'Invalid credentials', 'WWW-Authenticate', 'auth', 'bearer', 'exp', 'sub']

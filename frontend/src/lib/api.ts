@@ -69,12 +69,19 @@ class ApiClient {
   // Users
   getUsers = () => this.fetch<User[]>('/admin/users');
   getUser = (id: string) => this.fetch<User>(`/admin/users/${id}`);
-  createUser = (data: { name: string; description?: string }) =>
+  createUser = (data: { name: string; description?: string; monthly_budget_usd?: string | number | null }) =>
     this.fetch<User>('/admin/users', { method: 'POST', body: JSON.stringify(data) });
   deactivateUser = (id: string) =>
     this.fetch<User>(`/admin/users/${id}/deactivate`, { method: 'POST' });
   deleteUser = (id: string) =>
     this.fetch<void>(`/admin/users/${id}`, { method: 'DELETE' });
+  getUserBudget = (id: string) =>
+    this.fetch<UserBudgetStatus>(`/admin/users/${id}/budget`);
+  updateUserBudget = (id: string, monthly_budget_usd: string | number | null) =>
+    this.fetch<UserBudgetStatus>(`/admin/users/${id}/budget`, {
+      method: 'PUT',
+      body: JSON.stringify({ monthly_budget_usd }),
+    });
 
   // Access Keys
   getAccessKeys = (userId: string) =>
@@ -137,8 +144,19 @@ export interface User {
   name: string;
   description: string | null;
   status: string;
+  monthly_budget_usd?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserBudgetStatus {
+  user_id: string;
+  monthly_budget_usd: string | null;
+  current_usage_usd: string;
+  remaining_usd: string | null;
+  usage_percentage: number | null;
+  period_start: string;
+  period_end: string;
 }
 
 export interface AccessKey {

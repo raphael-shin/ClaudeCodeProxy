@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/api/admin_usage.py
+# hypothesis_version: 6.148.8
+
+[400, '/admin/usage', '/top-users', 'Asia/Seoul', 'Invalid date range', 'Invalid period', '^(day|week|month)$', 'bucket_start', 'cache_read_cost_usd', 'cache_write_cost_usd', 'day', 'hour', 'input_cost_usd', 'month', 'name', 'output_cost_usd', 'pricing_model_id', 'total_cost_usd', 'total_input_cost_usd', 'total_input_tokens', 'total_output_tokens', 'total_requests', 'total_tokens', 'usage', 'user_id', 'week']

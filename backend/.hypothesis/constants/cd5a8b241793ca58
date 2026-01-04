@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/streaming_usage.py
+# hypothesis_version: 6.148.8
+
+['[DONE]', 'data:', 'ignore', 'input_tokens', 'message', 'message_delta', 'message_start', 'output_tokens', 'type', 'usage']

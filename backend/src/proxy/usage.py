@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..logging import get_logger
-from ..domain import CostCalculator, PricingConfig
+from ..domain import AnthropicUsage, CostCalculator, PricingConfig
 from ..repositories import TokenUsageRepository, UsageAggregateRepository
 from .context import RequestContext
 from .router import ProxyResponse
@@ -79,6 +79,24 @@ class UsageRecorder:
             asyncio.create_task(
                 self._record_usage_with_cost(ctx, response, latency_ms, model)
             )
+
+    async def record_streaming_usage(
+        self,
+        ctx: RequestContext,
+        usage: AnthropicUsage,
+        latency_ms: int,
+        model: str,
+        is_fallback: bool,
+    ) -> None:
+        response = ProxyResponse(
+            success=True,
+            response=None,
+            usage=usage,
+            provider="bedrock",
+            is_fallback=is_fallback,
+            status_code=200,
+        )
+        await self._record_usage_with_cost(ctx, response, latency_ms, model)
 
     async def _record_usage_with_cost(
         self,

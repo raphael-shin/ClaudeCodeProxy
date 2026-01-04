@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ from src.domain.pricing import ModelPricing, PricingConfig
 from src.proxy.context import RequestContext
 from src.proxy.router import ProxyResponse
 from src.proxy.usage import UsageRecorder
+from hypothesis import given, strategies as st
 
 
 class FakeTokenUsageRepository:
@@ -212,3 +214,72 @@ async def test_record_usage_with_cost_falls_back_to_zero_on_pricing_error(
     assert call["cache_write_cost_usd"] == Decimal("0.000000")
     assert call["cache_read_cost_usd"] == Decimal("0.000000")
     assert call["pricing_model_id"] == "claude-sonnet-4-5"
+
+
+@given(
+    input_tokens=st.integers(min_value=0, max_value=1000),
+    output_tokens=st.integers(min_value=0, max_value=1000),
+    cache_write_tokens=st.integers(min_value=0, max_value=1000),
+    cache_read_tokens=st.integers(min_value=0, max_value=1000),
+)
+@pytest.mark.asyncio
+async def test_usage_accumulation_property(
+    input_tokens: int,
+    output_tokens: int,
+    cache_write_tokens: int,
+    cache_read_tokens: int,
+) -> None:
+    pricing = ModelPricing(
+        model_id="claude-opus-4-5",
+        region="ap-northeast-2",
+        input_price_per_million=Decimal("1.00"),
+        output_price_per_million=Decimal("2.00"),
+        cache_write_price_per_million=Decimal("3.00"),
+        cache_read_price_per_million=Decimal("4.00"),
+        effective_date=date(2025, 1, 1),
+    )
+
+    with patch.object(PricingConfig, "get_pricing", return_value=pricing):
+        token_repo = FakeTokenUsageRepository()
+        agg_repo = FakeUsageAggregateRepository()
+        recorder = UsageRecorder(token_repo, agg_repo, metrics_emitter=DummyMetricsEmitter())
+
+        ctx = RequestContext(
+            request_id="req-prop",
+            user_id=uuid4(),
+            access_key_id=uuid4(),
+            access_key_prefix="ak_test",
+            bedrock_region="ap-northeast-2",
+            bedrock_model="anthropic.claude-opus-4-5-20250514",
+            has_bedrock_key=True,
+        )
+        usage = AnthropicUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_input_tokens=cache_read_tokens,
+            cache_creation_input_tokens=cache_write_tokens,
+        )
+        response = ProxyResponse(
+            success=True,
+            response=None,
+            usage=usage,
+            provider="bedrock",
+            is_fallback=False,
+            status_code=200,
+        )
+
+        await recorder._record_usage_with_cost(
+            ctx, response, latency_ms=123, model=ctx.bedrock_model
+        )
+
+        expected_costs = CostCalculator.calculate_cost(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_write_tokens=cache_write_tokens,
+            cache_read_tokens=cache_read_tokens,
+            pricing=pricing,
+        )
+
+        assert agg_repo.calls
+        for agg_call in agg_repo.calls:
+            assert agg_call["total_estimated_cost_usd"] == expected_costs.total_cost

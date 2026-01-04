@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/bedrock_converse/stream_decoder.py
+# hypothesis_version: 6.148.8
+
+[200, 'ResponseStream', 'assistant', 'bedrock-runtime', 'body', 'bytes', 'cacheReadInputTokens', 'chunk', 'content', 'contentBlockDelta', 'contentBlockIndex', 'contentBlockStart', 'contentBlockStop', 'content_block', 'content_block_delta', 'content_block_start', 'content_block_stop', 'delta', 'id', 'ignore', 'index', 'input', 'input_json_delta', 'input_tokens', 'message', 'messageStart', 'messageStop', 'message_delta', 'message_start', 'message_stop', 'metadata', 'model', 'name', 'outputTokens', 'output_tokens', 'partial_json', 'role', 'service-2', 'start', 'status_code', 'stopReason', 'stop_reason', 'stop_sequence', 'text', 'text_delta', 'toolUse', 'toolUseId', 'tool_use', 'type', 'usage']

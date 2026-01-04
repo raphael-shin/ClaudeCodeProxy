@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Cache TTLs
     access_key_cache_ttl: int = 60
     bedrock_key_cache_ttl: int = 300
+    budget_cache_ttl: int = 60
 
     # Circuit Breaker
     circuit_failure_threshold: int = 3

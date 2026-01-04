@@ -276,6 +276,22 @@ class UsageAggregateRepository:
             "total_estimated_cost_usd": row[10] or Decimal("0"),
         }
 
+    async def get_monthly_usage_total(
+        self,
+        user_id: UUID,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> Decimal:
+        query = select(func.sum(UsageAggregateModel.total_estimated_cost_usd)).where(
+            UsageAggregateModel.bucket_type == "month",
+            UsageAggregateModel.bucket_start >= start_time,
+            UsageAggregateModel.bucket_start < end_time,
+            UsageAggregateModel.user_id == user_id,
+        )
+        result = await self.session.execute(query)
+        total = result.scalar_one_or_none()
+        return total or Decimal("0")
+
     async def increment(
         self,
         bucket_type: str,

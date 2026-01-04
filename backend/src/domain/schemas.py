@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Any
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 
@@ -59,6 +60,9 @@ class AnthropicCountTokensResponse(BaseModel):
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
+    monthly_budget_usd: Decimal | None = Field(
+        default=None, ge=Decimal("0.01"), le=Decimal("999999.99")
+    )
 
 
 class UserResponse(BaseModel):
@@ -66,8 +70,34 @@ class UserResponse(BaseModel):
     name: str
     description: str | None
     status: str
+    monthly_budget_usd: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("monthly_budget_usd", mode="before")
+    @classmethod
+    def _coerce_budget(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, Decimal):
+            return str(value)
+        return value
+
+
+class UserBudgetUpdate(BaseModel):
+    monthly_budget_usd: Decimal | None = Field(
+        default=None, ge=Decimal("0.01"), le=Decimal("999999.99")
+    )
+
+
+class UserBudgetResponse(BaseModel):
+    user_id: UUID
+    monthly_budget_usd: str | None
+    current_usage_usd: str
+    remaining_usd: str | None
+    usage_percentage: float | None
+    period_start: datetime
+    period_end: datetime
 
 
 class AccessKeyCreate(BaseModel):

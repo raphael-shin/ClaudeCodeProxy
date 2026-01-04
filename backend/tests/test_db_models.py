@@ -6,7 +6,7 @@ from sqlalchemy import BigInteger, Date, Numeric, String
 root = Path(__file__).resolve().parents[1]
 sys.path.append(str(root))
 
-from src.db.models import TokenUsageModel, UsageAggregateModel
+from src.db.models import TokenUsageModel, UsageAggregateModel, UserModel
 
 
 def test_token_usage_model_has_cost_snapshot_columns() -> None:
@@ -73,3 +73,13 @@ def test_usage_aggregates_model_has_cost_totals() -> None:
         assert isinstance(column_type, Numeric)
         assert column_type.precision == 15
         assert column_type.scale == 6
+
+
+def test_user_model_has_monthly_budget() -> None:
+    columns = UserModel.__table__.columns
+    assert "monthly_budget_usd" in columns
+
+    budget_type = columns["monthly_budget_usd"].type
+    assert isinstance(budget_type, Numeric)
+    assert budget_type.precision == 12
+    assert budget_type.scale == 2

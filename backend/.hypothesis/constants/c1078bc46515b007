@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/circuit_breaker.py
+# hypothesis_version: 6.148.8
+
+['closed', 'half_open', 'open']

@@ -1,3 +1,4 @@
+import asyncio
 import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -7,7 +8,12 @@ from ..db import get_session, async_session_factory
 from ..config import get_settings
 from ..domain import AnthropicRequest, AnthropicError, AnthropicCountTokensResponse, RETRYABLE_ERRORS
 from ..logging import get_logger
-from ..repositories import BedrockKeyRepository, TokenUsageRepository, UsageAggregateRepository
+from ..repositories import (
+    BedrockKeyRepository,
+    TokenUsageRepository,
+    UsageAggregateRepository,
+    UserRepository,
+)
 from ..proxy import (
     AuthService,
     get_auth_service,
@@ -15,9 +21,12 @@ from ..proxy import (
     PlanAdapter,
     BedrockAdapter,
     UsageRecorder,
+    BudgetService,
 )
+from ..proxy.budget import format_budget_exceeded_message
 from ..proxy.adapter_base import AdapterError
 from ..proxy.router import _map_error_type
+from ..proxy.streaming_usage import StreamingUsageCollector
 
 logger = get_logger(__name__)
 
@@ -64,6 +73,9 @@ async def proxy_messages(
         authorization_is_bearer=outgoing_headers.get("Authorization", "").startswith("Bearer "),
     )
 
+    usage_aggregate_repo = UsageAggregateRepository(session)
+    budget_service = BudgetService(UserRepository(session), usage_aggregate_repo)
+
     if request.stream:
         plan_adapter = PlanAdapter(headers=outgoing_headers)
         bedrock_adapter = None
@@ -77,6 +89,17 @@ async def proxy_messages(
                     and result.error_type in RETRYABLE_ERRORS
                 )
                 if should_fallback:
+                    budget_result = await budget_service.check_budget(ctx.user_id)
+                    if not budget_result.allowed:
+                        error_body = AnthropicError(
+                            error={
+                                "type": "rate_limit_error",
+                                "message": format_budget_exceeded_message(budget_result),
+                            },
+                            request_id=ctx.request_id,
+                        ).model_dump()
+                        return JSONResponse(content=error_body, status_code=429)
+
                     bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
                     bedrock_result = await bedrock_adapter.stream(ctx, request)
                     if isinstance(bedrock_result, AdapterError):
@@ -87,13 +110,39 @@ async def proxy_messages(
                         return JSONResponse(content=error_body, status_code=bedrock_result.status_code)
 
                     streaming_started = True
+                    streaming_start = time.time()
+                    usage_recorder = UsageRecorder(
+                        TokenUsageRepository(session),
+                        usage_aggregate_repo,
+                        session_factory=async_session_factory,
+                    )
+                    usage_collector = StreamingUsageCollector()
 
                     async def bedrock_stream_generator():
                         try:
                             async for chunk in bedrock_result:
+                                usage_collector.feed(chunk)
                                 yield chunk
                         finally:
                             await bedrock_adapter.close()
+                            usage = usage_collector.get_usage()
+                            if usage:
+                                latency_ms = int((time.time() - streaming_start) * 1000)
+                                asyncio.create_task(
+                                    usage_recorder.record_streaming_usage(
+                                        ctx,
+                                        usage,
+                                        latency_ms,
+                                        request.model,
+                                        is_fallback=True,
+                                    )
+                                )
+                            else:
+                                logger.warning(
+                                    "streaming_usage_missing",
+                                    request_id=ctx.request_id,
+                                    provider="bedrock",
+                                )
 
                     return StreamingResponse(
                         bedrock_stream_generator(),
@@ -131,11 +180,18 @@ async def proxy_messages(
 
     # Setup adapters
     token_usage_repo = TokenUsageRepository(session)
-    usage_aggregate_repo = UsageAggregateRepository(session)
 
     plan_adapter = PlanAdapter(headers=outgoing_headers)
     bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
-    proxy_router = ProxyRouter(plan_adapter, bedrock_adapter)
+
+    async def _budget_checker(ctx):
+        return await budget_service.check_budget(ctx.user_id)
+
+    proxy_router = ProxyRouter(
+        plan_adapter,
+        bedrock_adapter,
+        budget_checker=_budget_checker,
+    )
     usage_recorder = UsageRecorder(
         token_usage_repo,
         usage_aggregate_repo,

@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/bedrock_adapter.py
+# hypothesis_version: 6.148.8
+
+[10.0, 30.0, 200, 400, 401, 403, 422, 429, 502, 503, 504, 'Authorization', 'Content-Type', 'POST', 'Quota exceeded', 'Request timeout', 'application/json', 'bedrock/', 'converse', 'converse-stream', 'converse/', 'ignore']

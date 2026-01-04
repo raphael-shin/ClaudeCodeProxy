@@ -14,6 +14,7 @@ class User:
     status: UserStatus
     created_at: datetime
     updated_at: datetime
+    monthly_budget_usd: Decimal | None = None
     deleted_at: datetime | None = None
 
 

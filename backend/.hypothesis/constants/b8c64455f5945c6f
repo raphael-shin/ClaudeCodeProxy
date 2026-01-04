@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/domain/schemas.py
+# hypothesis_version: 6.148.8
+
+[255, 4096, '0.01', '999999.99', 'ap-northeast-2', 'assistant', 'error', 'hour', 'message']

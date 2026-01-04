@@ -24,6 +24,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "python-dateutil>=2.9.0.post0",
+    "hypothesis>=6.97.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
 ]

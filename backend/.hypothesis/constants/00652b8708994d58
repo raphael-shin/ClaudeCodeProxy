@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/usage.py
+# hypothesis_version: 6.148.8
+
+[200, '0', 'Asia/Seoul', 'bedrock', 'day', 'hour', 'minute', 'month', 'request_completed', 'week']

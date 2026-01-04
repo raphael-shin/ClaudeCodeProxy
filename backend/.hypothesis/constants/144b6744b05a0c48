@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/api/admin_users.py
+# hypothesis_version: 6.148.8
+
+[100, 201, 204, 404, '/admin/users', '/{user_id}', '/{user_id}/budget', 'User not found', 'users']

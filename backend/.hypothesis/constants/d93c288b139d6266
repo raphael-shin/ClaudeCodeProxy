@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/domain/enums.py
+# hypothesis_version: 6.148.8
+
+['active', 'bedrock_auth_error', 'bedrock_model_error', 'bedrock_unavailable', 'bedrock_validation', 'client_error', 'deleted', 'inactive', 'network_error', 'rate_limit', 'revoked', 'rotating', 'server_error', 'timeout', 'usage_limit']

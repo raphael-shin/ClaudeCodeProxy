@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '@/components/PageHeader';
-import { api, AccessKey, UsageResponse, User } from '@/lib/api';
+import { api, AccessKey, UsageResponse, User, UserBudgetStatus } from '@/lib/api';
 import {
   formatKstDate,
   resolveCustomRange,
@@ -35,6 +35,10 @@ const currencyShortFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+const percentFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
 
 export default function UserDetailPage() {
   const { id } = useParams();
@@ -52,16 +56,52 @@ export default function UserDetailPage() {
   const [usageLoading, setUsageLoading] = useState(false);
   const [rangePreset, setRangePreset] = useState<RangePreset>('month');
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
+  const [budgetStatus, setBudgetStatus] = useState<UserBudgetStatus | null>(null);
+  const [budgetInput, setBudgetInput] = useState('');
+  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [budgetError, setBudgetError] = useState('');
+  const [budgetNotice, setBudgetNotice] = useState('');
 
   const showNotice = (message: string) => {
     setNotice(message);
     setTimeout(() => setNotice(''), 2500);
   };
 
+  const showBudgetNotice = (message: string) => {
+    setBudgetNotice(message);
+    setTimeout(() => setBudgetNotice(''), 2500);
+  };
+
   useEffect(() => {
     if (!id) return;
-    api.getUser(id).then(setUser);
-    api.getAccessKeys(id).then(setKeys);
+    let active = true;
+    api.getUser(id).then((response) => {
+      if (!active) return;
+      setUser(response);
+    });
+    api.getAccessKeys(id).then((response) => {
+      if (!active) return;
+      setKeys(response);
+    });
+    setBudgetLoading(true);
+    api
+      .getUserBudget(id)
+      .then((response) => {
+        if (!active) return;
+        setBudgetStatus(response);
+        setBudgetInput(response.monthly_budget_usd ?? '');
+      })
+      .catch(() => {
+        if (!active) return;
+        setBudgetStatus(null);
+      })
+      .finally(() => {
+        if (active) setBudgetLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const usageRange = useMemo(() => {
@@ -140,6 +180,10 @@ export default function UserDetailPage() {
       }))
       .sort((a, b) => b.totalCost - a.totalCost);
   }, [usage]);
+  const budgetUsagePercent = budgetStatus?.usage_percentage ?? null;
+  const budgetProgress =
+    budgetUsagePercent !== null ? Math.min(100, Math.max(0, budgetUsagePercent)) : 0;
+  const budgetOverLimit = budgetUsagePercent !== null && budgetUsagePercent >= 100;
 
   const handleIssueKey = async () => {
     if (!id) return;
@@ -183,6 +227,42 @@ export default function UserDetailPage() {
     if (!id) return;
     await api.deactivateUser(id);
     navigate('/users');
+  };
+
+  const handleBudgetSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!id) return;
+    setBudgetError('');
+
+    const trimmed = budgetInput.trim();
+    let payload: string | number | null = null;
+    if (trimmed) {
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed)) {
+        setBudgetError('Enter a valid number.');
+        return;
+      }
+      if (parsed < 0.01 || parsed > 999999.99) {
+        setBudgetError('Budget must be between $0.01 and $999,999.99.');
+        return;
+      }
+      payload = parsed.toFixed(2);
+    }
+
+    setBudgetSaving(true);
+    try {
+      const updated = await api.updateUserBudget(id, payload);
+      setBudgetStatus(updated);
+      setBudgetInput(updated.monthly_budget_usd ?? '');
+      setUser((prev) =>
+        prev ? { ...prev, monthly_budget_usd: updated.monthly_budget_usd } : prev
+      );
+      showBudgetNotice('Budget updated.');
+    } catch {
+      setBudgetError('Failed to update budget.');
+    } finally {
+      setBudgetSaving(false);
+    }
   };
 
   const handleCopyPendingKey = async () => {
@@ -257,6 +337,131 @@ export default function UserDetailPage() {
             <SummaryRow label="Revoked keys" value={revokedKeys} />
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-line bg-surface p-6 shadow-soft">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Monthly Budget (Bedrock)</h2>
+            <p className="text-xs text-muted">
+              Current month usage only, KST period boundaries.
+            </p>
+          </div>
+          {budgetStatus && (
+            <span
+              className={[
+                'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold',
+                budgetOverLimit ? 'bg-danger/10 text-danger' : 'bg-accent/10 text-accent',
+              ].join(' ')}
+            >
+              {budgetStatus.monthly_budget_usd
+                ? `${formatPercent(budgetStatus.usage_percentage)} used`
+                : 'Unlimited'}
+            </span>
+          )}
+        </div>
+
+        {budgetLoading && (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-sm text-muted">
+            Loading budget status...
+          </div>
+        )}
+
+        {!budgetLoading && !budgetStatus && (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4 text-sm text-muted">
+            Budget status unavailable right now.
+          </div>
+        )}
+
+        {!budgetLoading && budgetStatus && (
+          <>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <BudgetMetric
+                label="Budget"
+                value={
+                  budgetStatus.monthly_budget_usd
+                    ? formatBudget(budgetStatus.monthly_budget_usd)
+                    : 'Unlimited'
+                }
+              />
+              <BudgetMetric
+                label="Usage"
+                value={formatBudget(budgetStatus.current_usage_usd)}
+                note="Bedrock only"
+              />
+              <BudgetMetric
+                label="Remaining"
+                value={
+                  budgetStatus.remaining_usd
+                    ? formatBudget(budgetStatus.remaining_usd)
+                    : 'Unlimited'
+                }
+              />
+              <BudgetMetric
+                label="Period"
+                value={`${formatBudgetDate(budgetStatus.period_start)} - ${formatBudgetDate(
+                  budgetStatus.period_end
+                )}`}
+              />
+            </div>
+
+            {budgetStatus.monthly_budget_usd && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-muted">
+                  <span>Usage</span>
+                  <span>{formatPercent(budgetStatus.usage_percentage)} of budget</span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-surface-2">
+                  <div
+                    className={`h-2 rounded-full ${budgetOverLimit ? 'bg-danger' : 'bg-accent'}`}
+                    style={{ width: `${budgetProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <form
+          onSubmit={handleBudgetSave}
+          className="mt-6 grid gap-4 rounded-2xl border border-line bg-surface-2 p-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+        >
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              Set Monthly Budget (USD)
+            </label>
+            <input
+              type="number"
+              min="0.01"
+              max="999999.99"
+              step="0.01"
+              placeholder="Unlimited"
+              value={budgetInput}
+              onChange={(event) => setBudgetInput(event.target.value)}
+              className={`${inputClass} mt-2`}
+            />
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <button
+              type="submit"
+              disabled={budgetSaving}
+              className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white transition hover:bg-black disabled:opacity-60"
+            >
+              {budgetSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setBudgetInput('')}
+              className="rounded-full border border-line px-4 py-2 text-sm font-semibold text-ink transition hover:bg-surface"
+            >
+              Unlimited
+            </button>
+          </div>
+          <div className="text-sm sm:col-span-2">
+            {budgetError && <div className="text-danger">{budgetError}</div>}
+            {budgetNotice && <div className="text-success">{budgetNotice}</div>}
+          </div>
+        </form>
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-6 shadow-soft">
@@ -609,6 +814,16 @@ function MetricCard({ label, value, note }: { label: string; value: string; note
   );
 }
 
+function BudgetMetric({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-4">
+      <div className="text-xs uppercase tracking-[0.24em] text-muted">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-ink">{value}</div>
+      {note && <div className="mt-1 text-xs text-muted">{note}</div>}
+    </div>
+  );
+}
+
 function SummaryRow({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center justify-between">
@@ -631,6 +846,23 @@ function parseCost(value: string | number | undefined) {
   if (value === undefined) return 0;
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatBudget(value: string | number) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return '-';
+  return currencyShortFormatter.format(parsed);
+}
+
+function formatBudgetDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  return `${percentFormatter.format(value)}%`;
 }
 
 function formatModelLabel(modelId: string) {

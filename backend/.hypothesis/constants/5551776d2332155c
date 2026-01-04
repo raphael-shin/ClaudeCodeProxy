@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/domain/pricing.py
+# hypothesis_version: 6.148.8
+
+[2025, '0.10', '0.30', '0.50', '1.00', '1.25', '15.00', '1970-01-01', '25.00', '3.00', '3.75', '4-5', '4.5', '5.00', '6.25', 'PROXY_MODEL_PRICING', 'ap-northeast-2', 'claude-haiku-4-5', 'claude-opus-4-5', 'claude-sonnet-4-5', 'effective_date', 'haiku', 'opus', 'sonnet']

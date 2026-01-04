@@ -4,6 +4,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import UserModel
+from decimal import Decimal
+
 from ..domain import User, UserStatus
 
 
@@ -11,12 +13,18 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, name: str, description: str | None = None) -> User:
+    async def create(
+        self,
+        name: str,
+        description: str | None = None,
+        monthly_budget_usd: Decimal | None = None,
+    ) -> User:
         now = datetime.utcnow()
         model = UserModel(
             name=name,
             description=description,
             status=UserStatus.ACTIVE.value,
+            monthly_budget_usd=monthly_budget_usd,
             created_at=now,
             updated_at=now,
         )
@@ -49,12 +57,22 @@ class UserRepository:
         )
         return result.rowcount > 0
 
+    async def update_budget(self, user_id: UUID, budget: Decimal | None) -> bool:
+        now = datetime.utcnow()
+        result = await self.session.execute(
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(monthly_budget_usd=budget, updated_at=now)
+        )
+        return result.rowcount > 0
+
     def _to_entity(self, model: UserModel) -> User:
         return User(
             id=model.id,
             name=model.name,
             description=model.description,
             status=UserStatus(model.status),
+            monthly_budget_usd=model.monthly_budget_usd,
             created_at=model.created_at,
             updated_at=model.updated_at,
             deleted_at=model.deleted_at,

@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/domain/cost_calculator.py
+# hypothesis_version: 6.148.8
+
+['0.000000', '0.000001', '1000000', 'cache_read_cost', 'cache_write_cost', 'input_cost', 'output_cost', 'total_cost']

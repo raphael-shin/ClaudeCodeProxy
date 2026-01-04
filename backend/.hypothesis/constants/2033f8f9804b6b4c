@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/db/models.py
+# hypothesis_version: 6.148.8
+
+[128, 255, '0', 'AccessKeyModel', 'UserModel', 'access_key', 'access_key_id', 'access_keys', 'access_keys.id', 'active', 'ap-northeast-2', 'bedrock', 'bedrock_key', 'bedrock_keys', 'bucket_start', 'bucket_type', 'timestamp', 'token_usage', 'usage_aggregates', 'user', 'user_id', 'users', 'users.id']

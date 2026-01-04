@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/budget.py
+# hypothesis_version: 6.148.8
+
+['%Y-%m-%d %H:%M:%S %Z', '0', '100', 'Asia/Seoul', 'budget_lookup_failed']

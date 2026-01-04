@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 
 from ..domain import AnthropicRequest, AnthropicResponse, AnthropicUsage, RETRYABLE_ERRORS, ErrorType
 from ..logging import get_logger
 from .context import RequestContext
+from .budget import BudgetCheckResult, format_budget_exceeded_message
 from .adapter_base import AdapterResponse, AdapterError, Adapter
 from .dependencies import get_proxy_deps
 
@@ -45,9 +47,15 @@ class ProxyResponse:
 class ProxyRouter:
     """Routes requests between Plan and Bedrock."""
 
-    def __init__(self, plan_adapter: Adapter, bedrock_adapter: Adapter):
+    def __init__(
+        self,
+        plan_adapter: Adapter,
+        bedrock_adapter: Adapter,
+        budget_checker: Callable[[RequestContext], Awaitable[BudgetCheckResult]] | None = None,
+    ):
         self._plan = plan_adapter
         self._bedrock = bedrock_adapter
+        self._budget_checker = budget_checker
 
     async def route(
         self, ctx: RequestContext, request: AnthropicRequest
@@ -73,6 +81,19 @@ class ProxyRouter:
             logger.info("plan_skipped_circuit_open", access_key_id=key_id)
 
         if ctx.has_bedrock_key:
+            if self._budget_checker:
+                budget_result = await self._budget_checker(ctx)
+                if not budget_result.allowed:
+                    return ProxyResponse(
+                        success=False,
+                        response=None,
+                        usage=None,
+                        provider="bedrock",
+                        is_fallback=plan_attempted,
+                        status_code=429,
+                        error_type="rate_limit_error",
+                        error_message=format_budget_exceeded_message(budget_result),
+                    )
             result = await self._bedrock.invoke(ctx, request)
 
             if isinstance(result, AdapterResponse):

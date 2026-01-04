@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/proxy/bedrock_converse/request_builder.py
+# hypothesis_version: 6.148.8
+
+[256, 'any', 'auto', 'content', 'description', 'error', 'function', 'id', 'inferenceConfig', 'input', 'inputSchema', 'input_schema', 'is_error', 'json', 'maxTokens', 'messages', 'name', 'parameters', 'requestMetadata', 'required', 'role', 'status', 'stopSequences', 'success', 'system', 'temperature', 'text', 'tool', 'toolChoice', 'toolConfig', 'toolResult', 'toolSpec', 'toolUse', 'toolUseId', 'tool_result', 'tool_use', 'tool_use_id', 'tools', 'topK', 'topP', 'type']

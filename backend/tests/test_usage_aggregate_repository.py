@@ -323,6 +323,44 @@ class TestGetTotals:
         assert totals["total_estimated_cost_usd"] == Decimal("0")
 
 
+class TestGetMonthlyUsageTotal:
+    """Test get_monthly_usage_total() helper."""
+
+    @pytest.mark.asyncio
+    async def test_get_monthly_usage_total_returns_sum(self) -> None:
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=Decimal("12.340000"))
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        repo = UsageAggregateRepository(mock_session)
+
+        total = await repo.get_monthly_usage_total(
+            user_id=uuid4(),
+            start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            end_time=datetime(2025, 2, 1, tzinfo=timezone.utc),
+        )
+
+        assert total == Decimal("12.340000")
+
+    @pytest.mark.asyncio
+    async def test_get_monthly_usage_total_handles_empty_result(self) -> None:
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        repo = UsageAggregateRepository(mock_session)
+
+        total = await repo.get_monthly_usage_total(
+            user_id=uuid4(),
+            start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            end_time=datetime(2025, 2, 1, tzinfo=timezone.utc),
+        )
+
+        assert total == Decimal("0")
+
+
 class TestMultipleIncrementAccumulation:
     """Test that multiple increment calls accumulate correctly."""
 

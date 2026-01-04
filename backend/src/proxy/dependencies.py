@@ -17,12 +17,16 @@ class ProxyDependencies:
     bedrock_key_cache: TTLCache = field(
         default_factory=lambda: TTLCache(get_settings().bedrock_key_cache_ttl)
     )
+    budget_cache: TTLCache = field(
+        default_factory=lambda: TTLCache(get_settings().budget_cache_ttl)
+    )
 
     def reset(self) -> None:
         """Reset all state. Useful for testing."""
         self.circuit_breaker = CircuitBreaker()
         self.access_key_cache.clear()
         self.bedrock_key_cache.clear()
+        self.budget_cache.clear()
 
 
 # Global instance (per-process)

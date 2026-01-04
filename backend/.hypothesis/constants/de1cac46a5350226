@@ -1,0 +1,4 @@
+# file: /Users/jungseob/workspace/ClaudeCodeProxy/backend/src/api/proxy_router.py
+# hypothesis_version: 6.148.8
+
+[401, 404, 429, 1000, '/health', 'Authorization', 'Bearer ', 'Cache-Control', 'Connection', 'Not found', 'anthropic-beta', 'anthropic-version', 'authentication_error', 'authorization', 'bedrock', 'content-type', 'healthy', 'keep-alive', 'message', 'no-cache', 'proxy_auth_headers', 'rate_limit_error', 'status', 'text/event-stream', 'type', 'x-api-key']

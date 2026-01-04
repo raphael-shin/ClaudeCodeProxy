@@ -3,12 +3,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..domain import UserCreate, UserResponse, UserStatus
-from ..repositories import UserRepository, AccessKeyRepository
-from ..proxy import invalidate_access_key_cache
+from ..domain import UserCreate, UserResponse, UserStatus, UserBudgetUpdate, UserBudgetResponse
+from ..repositories import UserRepository, AccessKeyRepository, UsageAggregateRepository
+from ..proxy import invalidate_access_key_cache, BudgetService, BudgetCheckResult, invalidate_budget_cache
 from .deps import require_admin
 
 router = APIRouter(prefix="/admin/users", tags=["users"], dependencies=[Depends(require_admin)])
+
+
+def _build_budget_response(user_id: UUID, result: BudgetCheckResult) -> UserBudgetResponse:
+    return UserBudgetResponse(
+        user_id=user_id,
+        monthly_budget_usd=str(result.monthly_budget)
+        if result.monthly_budget is not None
+        else None,
+        current_usage_usd=str(result.current_usage),
+        remaining_usd=str(result.remaining) if result.remaining is not None else None,
+        usage_percentage=result.usage_percentage,
+        period_start=result.period_start,
+        period_end=result.period_end,
+    )
 
 
 @router.get("", response_model=list[UserResponse])
@@ -28,8 +42,13 @@ async def create_user(
     session: AsyncSession = Depends(get_session),
 ):
     repo = UserRepository(session)
-    user = await repo.create(name=data.name, description=data.description)
-    await session.commit()
+    user = await repo.create(
+        name=data.name,
+        description=data.description,
+        monthly_budget_usd=data.monthly_budget_usd,
+    )
+    if session is not None:
+        await session.commit()
     return UserResponse(**user.__dict__)
 
 
@@ -43,6 +62,49 @@ async def get_user(
     if not user or user.status == UserStatus.DELETED:
         raise HTTPException(status_code=404, detail="User not found")
     return UserResponse(**user.__dict__)
+
+
+@router.get("/{user_id}/budget", response_model=UserBudgetResponse)
+async def get_user_budget(
+    user_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    user_repo = UserRepository(session)
+    usage_repo = UsageAggregateRepository(session)
+
+    user = await user_repo.get_by_id(user_id)
+    if not user or user.status == UserStatus.DELETED:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    budget_service = BudgetService(user_repo, usage_repo)
+    result = await budget_service.check_budget(user_id, fail_open=False)
+    return _build_budget_response(user_id, result)
+
+
+@router.put("/{user_id}/budget", response_model=UserBudgetResponse)
+async def update_user_budget(
+    user_id: UUID,
+    data: UserBudgetUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    user_repo = UserRepository(session)
+    usage_repo = UsageAggregateRepository(session)
+
+    user = await user_repo.get_by_id(user_id)
+    if not user or user.status == UserStatus.DELETED:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updated = await user_repo.update_budget(user_id, data.monthly_budget_usd)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if session is not None:
+        await session.commit()
+    invalidate_budget_cache(user_id)
+
+    budget_service = BudgetService(user_repo, usage_repo)
+    result = await budget_service.check_budget(user_id, fail_open=False)
+    return _build_budget_response(user_id, result)
 
 
 @router.post("/{user_id}/deactivate", response_model=UserResponse)
