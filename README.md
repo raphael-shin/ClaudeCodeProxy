@@ -191,7 +191,7 @@ This deploys:
 - VPC with public/private subnets
 - RDS PostgreSQL database
 - ECS Fargate service for the backend
-- AWS Amplify for frontend hosting
+- CloudFront distribution for secure access
 - Secrets Manager for sensitive configuration
 
 ### Frontend Deployment (Amplify)
@@ -226,7 +226,7 @@ Option B — Manual upload via Amplify Console:
 
 - **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0, PostgreSQL
 - **Frontend**: React 18, Vite, Tailwind CSS
-- **Infrastructure**: AWS CDK, ECS Fargate, RDS, Amplify
+- **Infrastructure**: AWS CDK, ECS Fargate, RDS, CloudFront
 
 ## License
 
