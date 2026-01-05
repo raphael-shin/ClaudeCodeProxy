@@ -82,6 +82,11 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify({ monthly_budget_usd }),
     });
+  updateUserRoutingStrategy = (id: string, routing_strategy: 'plan_first' | 'bedrock_only') =>
+    this.fetch<User>(`/admin/users/${id}/routing-strategy`, {
+      method: 'PUT',
+      body: JSON.stringify({ routing_strategy }),
+    });
 
   // Access Keys
   getAccessKeys = (userId: string) =>
@@ -144,6 +149,7 @@ export interface User {
   name: string;
   description: string | null;
   status: string;
+  routing_strategy: 'plan_first' | 'bedrock_only';
   monthly_budget_usd?: string | null;
   created_at: string;
   updated_at: string;

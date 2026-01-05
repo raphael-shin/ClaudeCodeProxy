@@ -82,15 +82,6 @@ class PlanAdapter:
         self, ctx: RequestContext, request: AnthropicRequest
     ) -> AdapterResponse | AdapterError:
         try:
-            settings = get_settings()
-            if settings.plan_force_rate_limit:
-                logger.info("plan_request_simulated_rate_limit")
-                return AdapterError(
-                    error_type=ErrorType.RATE_LIMIT,
-                    status_code=429,
-                    message="Simulated rate limit",
-                    retryable=True,
-                )
             url = f"{self._base_url}/v1/messages"
             response = await self._client.post(
                 url,
@@ -126,15 +117,6 @@ class PlanAdapter:
 
     async def stream(self, request: AnthropicRequest) -> httpx.Response | AdapterError:
         try:
-            settings = get_settings()
-            if settings.plan_force_rate_limit:
-                logger.info("plan_request_simulated_rate_limit")
-                return AdapterError(
-                    error_type=ErrorType.RATE_LIMIT,
-                    status_code=429,
-                    message="Simulated rate limit",
-                    retryable=True,
-                )
             url = f"{self._base_url}/v1/messages"
             http_request = self._client.build_request(
                 "POST",
@@ -159,15 +141,6 @@ class PlanAdapter:
         self, request: AnthropicRequest
     ) -> AnthropicCountTokensResponse | AdapterError:
         try:
-            settings = get_settings()
-            if settings.plan_force_rate_limit:
-                logger.info("plan_request_simulated_rate_limit")
-                return AdapterError(
-                    error_type=ErrorType.RATE_LIMIT,
-                    status_code=429,
-                    message="Simulated rate limit",
-                    retryable=True,
-                )
             url = f"{self._base_url}/v1/messages/count_tokens"
             response = await self._client.post(
                 url,

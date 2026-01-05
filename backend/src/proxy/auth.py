@@ -5,6 +5,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
+from ..domain import RoutingStrategy
 from ..repositories import AccessKeyRepository, BedrockKeyRepository
 from ..security import KeyHasher
 from .context import RequestContext
@@ -19,6 +20,7 @@ class _CachedAccessKey:
     bedrock_region: str
     bedrock_model: str
     has_bedrock_key: bool
+    routing_strategy: RoutingStrategy
 
 
 class AuthService:
@@ -45,6 +47,7 @@ class AuthService:
                 bedrock_region=cached.bedrock_region,
                 bedrock_model=cached.bedrock_model,
                 has_bedrock_key=cached.has_bedrock_key,
+                routing_strategy=cached.routing_strategy,
             )
 
         # Query database
@@ -52,10 +55,11 @@ class AuthService:
         if not result:
             return None
 
-        access_key, user_id = result
+        access_key, user_id, routing_strategy_str = result
 
         bedrock_key = await self._bedrock_key_repo.get_by_access_key_id(access_key.id)
         has_bedrock_key = bedrock_key is not None
+        routing_strategy = RoutingStrategy(routing_strategy_str)
 
         cached_entry = _CachedAccessKey(
             user_id=user_id,
@@ -64,6 +68,7 @@ class AuthService:
             bedrock_region=access_key.bedrock_region,
             bedrock_model=access_key.bedrock_model,
             has_bedrock_key=has_bedrock_key,
+            routing_strategy=routing_strategy,
         )
 
         # Cache result
@@ -76,6 +81,7 @@ class AuthService:
             bedrock_region=access_key.bedrock_region,
             bedrock_model=access_key.bedrock_model,
             has_bedrock_key=has_bedrock_key,
+            routing_strategy=routing_strategy,
         )
 
 

@@ -1,4 +1,4 @@
-from .enums import UserStatus, KeyStatus, ErrorType, CIRCUIT_TRIGGERS, RETRYABLE_ERRORS
+from .enums import UserStatus, KeyStatus, RoutingStrategy, ErrorType, CIRCUIT_TRIGGERS, RETRYABLE_ERRORS
 from .entities import User, AccessKey, BedrockKey, TokenUsage, UsageAggregate
 from .pricing import ModelPricing, PricingConfig
 from .cost_calculator import CostBreakdown, CostCalculator
@@ -12,6 +12,7 @@ from .schemas import (
     UserResponse,
     UserBudgetUpdate,
     UserBudgetResponse,
+    UserRoutingStrategyUpdate,
     AccessKeyCreate,
     AccessKeyResponse,
     BedrockKeyRegister,
@@ -27,6 +28,7 @@ from .schemas import (
 __all__ = [
     "UserStatus",
     "KeyStatus",
+    "RoutingStrategy",
     "ErrorType",
     "CIRCUIT_TRIGGERS",
     "RETRYABLE_ERRORS",
@@ -48,6 +50,7 @@ __all__ = [
     "UserResponse",
     "UserBudgetUpdate",
     "UserBudgetResponse",
+    "UserRoutingStrategyUpdate",
     "AccessKeyCreate",
     "AccessKeyResponse",
     "BedrockKeyRegister",

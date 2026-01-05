@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..domain import UserCreate, UserResponse, UserStatus, UserBudgetUpdate, UserBudgetResponse
+from ..domain import UserCreate, UserResponse, UserStatus, UserBudgetUpdate, UserBudgetResponse, UserRoutingStrategyUpdate, RoutingStrategy
 from ..repositories import UserRepository, AccessKeyRepository, UsageAggregateRepository
 from ..proxy import invalidate_access_key_cache, BudgetService, BudgetCheckResult, invalidate_budget_cache
 from .deps import require_admin
@@ -45,6 +45,7 @@ async def create_user(
     user = await repo.create(
         name=data.name,
         description=data.description,
+        routing_strategy=RoutingStrategy(data.routing_strategy),
         monthly_budget_usd=data.monthly_budget_usd,
     )
     if session is not None:
@@ -156,3 +157,34 @@ async def delete_user(
     # Invalidate cache for all user's keys
     for key in keys:
         invalidate_access_key_cache(key.key_hash)
+
+
+@router.put("/{user_id}/routing-strategy", response_model=UserResponse)
+async def update_user_routing_strategy(
+    user_id: UUID,
+    data: UserRoutingStrategyUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    user_repo = UserRepository(session)
+    key_repo = AccessKeyRepository(session)
+
+    user = await user_repo.get_by_id(user_id)
+    if not user or user.status == UserStatus.DELETED:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updated = await user_repo.update_routing_strategy(
+        user_id, RoutingStrategy(data.routing_strategy)
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if session is not None:
+        await session.commit()
+
+    # Invalidate cache for all user's keys to pick up new routing strategy
+    keys = await key_repo.list_by_user(user_id)
+    for key in keys:
+        invalidate_access_key_cache(key.key_hash)
+
+    user = await user_repo.get_by_id(user_id)
+    return UserResponse(**user.__dict__)

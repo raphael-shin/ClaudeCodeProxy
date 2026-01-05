@@ -84,7 +84,6 @@ class Settings(BaseSettings):
     bedrock_default_model: str = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
     plan_verify_ssl: bool = True
     plan_ca_bundle: str = ""
-    plan_force_rate_limit: bool = False
 
     # Internal: loaded admin password (plain text from Secrets Manager)
     _admin_password_plain: str = ""

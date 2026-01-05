@@ -13,6 +13,11 @@ class KeyStatus(str, Enum):
     REVOKED = "revoked"
 
 
+class RoutingStrategy(str, Enum):
+    PLAN_FIRST = "plan_first"
+    BEDROCK_ONLY = "bedrock_only"
+
+
 class ErrorType(str, Enum):
     # Plan errors
     RATE_LIMIT = "rate_limit"

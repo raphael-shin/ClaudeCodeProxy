@@ -62,6 +62,9 @@ export default function UserDetailPage() {
   const [budgetSaving, setBudgetSaving] = useState(false);
   const [budgetError, setBudgetError] = useState('');
   const [budgetNotice, setBudgetNotice] = useState('');
+  const [routingStrategy, setRoutingStrategy] = useState<'plan_first' | 'bedrock_only'>('plan_first');
+  const [routingSaving, setRoutingSaving] = useState(false);
+  const [routingNotice, setRoutingNotice] = useState('');
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -73,12 +76,18 @@ export default function UserDetailPage() {
     setTimeout(() => setBudgetNotice(''), 2500);
   };
 
+  const showRoutingNotice = (message: string) => {
+    setRoutingNotice(message);
+    setTimeout(() => setRoutingNotice(''), 2500);
+  };
+
   useEffect(() => {
     if (!id) return;
     let active = true;
     api.getUser(id).then((response) => {
       if (!active) return;
       setUser(response);
+      setRoutingStrategy(response.routing_strategy || 'plan_first');
     });
     api.getAccessKeys(id).then((response) => {
       if (!active) return;
@@ -265,6 +274,21 @@ export default function UserDetailPage() {
     }
   };
 
+  const handleRoutingStrategyChange = async (newStrategy: 'plan_first' | 'bedrock_only') => {
+    if (!id || routingSaving) return;
+    setRoutingSaving(true);
+    try {
+      const updated = await api.updateUserRoutingStrategy(id, newStrategy);
+      setRoutingStrategy(updated.routing_strategy);
+      setUser((prev) => (prev ? { ...prev, routing_strategy: updated.routing_strategy } : prev));
+      showRoutingNotice('Routing strategy updated.');
+    } catch {
+      showRoutingNotice('Failed to update routing strategy.');
+    } finally {
+      setRoutingSaving(false);
+    }
+  };
+
   const handleCopyPendingKey = async () => {
     if (!pendingKey?.value) return;
     const copySucceeded = await copyToClipboard(pendingKey.value);
@@ -337,6 +361,78 @@ export default function UserDetailPage() {
             <SummaryRow label="Revoked keys" value={revokedKeys} />
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-line bg-surface p-6 shadow-soft">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Routing Strategy</h2>
+            <p className="text-xs text-muted">
+              Control how requests are routed for this user.
+            </p>
+          </div>
+          <span className="inline-flex items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+            {routingStrategy === 'plan_first' ? 'Plan First' : 'Bedrock Only'}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => handleRoutingStrategyChange('plan_first')}
+            disabled={routingSaving}
+            className={[
+              'rounded-2xl border p-4 text-left transition',
+              routingStrategy === 'plan_first'
+                ? 'border-accent bg-accent/5 ring-2 ring-accent/20'
+                : 'border-line hover:border-accent/50 hover:bg-surface-2',
+            ].join(' ')}
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className={[
+                  'h-4 w-4 rounded-full border-2',
+                  routingStrategy === 'plan_first' ? 'border-accent bg-accent' : 'border-muted',
+                ].join(' ')}
+              />
+              <span className="font-semibold text-ink">Plan First</span>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Try Anthropic Plan API first. Falls back to Bedrock if Plan fails or rate limited.
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRoutingStrategyChange('bedrock_only')}
+            disabled={routingSaving}
+            className={[
+              'rounded-2xl border p-4 text-left transition',
+              routingStrategy === 'bedrock_only'
+                ? 'border-accent bg-accent/5 ring-2 ring-accent/20'
+                : 'border-line hover:border-accent/50 hover:bg-surface-2',
+            ].join(' ')}
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className={[
+                  'h-4 w-4 rounded-full border-2',
+                  routingStrategy === 'bedrock_only' ? 'border-accent bg-accent' : 'border-muted',
+                ].join(' ')}
+              />
+              <span className="font-semibold text-ink">Bedrock Only</span>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Skip Plan API entirely. All requests go directly to AWS Bedrock.
+            </p>
+          </button>
+        </div>
+
+        {routingNotice && (
+          <div className="mt-4 text-sm text-success">{routingNotice}</div>
+        )}
+        {routingSaving && (
+          <div className="mt-4 text-sm text-muted">Saving...</div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-line bg-surface p-6 shadow-soft">

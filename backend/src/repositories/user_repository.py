@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import UserModel
 from decimal import Decimal
 
-from ..domain import User, UserStatus
+from ..domain import User, UserStatus, RoutingStrategy
 
 
 class UserRepository:
@@ -17,6 +17,7 @@ class UserRepository:
         self,
         name: str,
         description: str | None = None,
+        routing_strategy: RoutingStrategy = RoutingStrategy.PLAN_FIRST,
         monthly_budget_usd: Decimal | None = None,
     ) -> User:
         now = datetime.utcnow()
@@ -24,6 +25,7 @@ class UserRepository:
             name=name,
             description=description,
             status=UserStatus.ACTIVE.value,
+            routing_strategy=routing_strategy.value,
             monthly_budget_usd=monthly_budget_usd,
             created_at=now,
             updated_at=now,
@@ -75,12 +77,24 @@ class UserRepository:
         )
         return result.rowcount > 0
 
+    async def update_routing_strategy(
+        self, user_id: UUID, routing_strategy: RoutingStrategy
+    ) -> bool:
+        now = datetime.utcnow()
+        result = await self.session.execute(
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(routing_strategy=routing_strategy.value, updated_at=now)
+        )
+        return result.rowcount > 0
+
     def _to_entity(self, model: UserModel) -> User:
         return User(
             id=model.id,
             name=model.name,
             description=model.description,
             status=UserStatus(model.status),
+            routing_strategy=RoutingStrategy(model.routing_strategy),
             monthly_budget_usd=model.monthly_budget_usd,
             created_at=model.created_at,
             updated_at=model.updated_at,

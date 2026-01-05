@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from .enums import UserStatus, KeyStatus
+from .enums import UserStatus, KeyStatus, RoutingStrategy
 
 
 @dataclass
@@ -14,6 +14,7 @@ class User:
     status: UserStatus
     created_at: datetime
     updated_at: datetime
+    routing_strategy: RoutingStrategy = RoutingStrategy.PLAN_FIRST
     monthly_budget_usd: Decimal | None = None
     deleted_at: datetime | None = None
 

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session, async_session_factory
 from ..config import get_settings
-from ..domain import AnthropicRequest, AnthropicError, AnthropicCountTokensResponse, RETRYABLE_ERRORS
+from ..domain import AnthropicRequest, AnthropicError, AnthropicCountTokensResponse, RETRYABLE_ERRORS, RoutingStrategy
 from ..logging import get_logger
 from ..repositories import (
     BedrockKeyRepository,
@@ -77,108 +77,16 @@ async def proxy_messages(
     budget_service = BudgetService(UserRepository(session), usage_aggregate_repo)
 
     if request.stream:
-        plan_adapter = PlanAdapter(headers=outgoing_headers)
-        bedrock_adapter = None
-        streaming_started = False
-        try:
-            result = await plan_adapter.stream(request)
-            if isinstance(result, AdapterError):
-                should_fallback = (
-                    ctx.has_bedrock_key
-                    and result.retryable
-                    and result.error_type in RETRYABLE_ERRORS
-                )
-                if should_fallback:
-                    budget_result = await budget_service.check_budget(
-                        ctx.user_id, fail_open=False
-                    )
-                    if not budget_result.allowed:
-                        error_body = AnthropicError(
-                            error={
-                                "type": "rate_limit_error",
-                                "message": format_budget_exceeded_message(budget_result),
-                            },
-                            request_id=ctx.request_id,
-                        ).model_dump()
-                        return JSONResponse(content=error_body, status_code=429)
-
-                    bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
-                    bedrock_result = await bedrock_adapter.stream(ctx, request)
-                    if isinstance(bedrock_result, AdapterError):
-                        error_body = AnthropicError(
-                            error={"type": _map_error_type(bedrock_result.error_type), "message": bedrock_result.message},
-                            request_id=ctx.request_id,
-                        ).model_dump()
-                        return JSONResponse(content=error_body, status_code=bedrock_result.status_code)
-
-                    streaming_started = True
-                    streaming_start = time.time()
-                    usage_recorder = UsageRecorder(
-                        TokenUsageRepository(session),
-                        usage_aggregate_repo,
-                        session_factory=async_session_factory,
-                    )
-                    usage_collector = StreamingUsageCollector()
-
-                    async def bedrock_stream_generator():
-                        try:
-                            async for chunk in bedrock_result:
-                                usage_collector.feed(chunk)
-                                yield chunk
-                        finally:
-                            await bedrock_adapter.close()
-                            usage = usage_collector.get_usage()
-                            if usage:
-                                latency_ms = int((time.time() - streaming_start) * 1000)
-                                asyncio.create_task(
-                                    usage_recorder.record_streaming_usage(
-                                        ctx,
-                                        usage,
-                                        latency_ms,
-                                        request.model,
-                                        is_fallback=True,
-                                    )
-                                )
-                            else:
-                                logger.warning(
-                                    "streaming_usage_missing",
-                                    request_id=ctx.request_id,
-                                    provider="bedrock",
-                                )
-
-                    return StreamingResponse(
-                        bedrock_stream_generator(),
-                        media_type="text/event-stream",
-                        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-                    )
-
-                error_body = AnthropicError(
-                    error={"type": _map_error_type(result.error_type), "message": result.message},
-                    request_id=ctx.request_id,
-                ).model_dump()
-                return JSONResponse(content=error_body, status_code=result.status_code)
-
-            streaming_started = True
-
-            async def stream_generator():
-                try:
-                    async for chunk in result.aiter_bytes():
-                        yield chunk
-                finally:
-                    await result.aclose()
-                    await plan_adapter.close()
-
-            media_type = result.headers.get("content-type", "text/event-stream")
-            return StreamingResponse(
-                stream_generator(),
-                media_type=media_type,
-                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        # Route streaming based on user's routing strategy
+        if ctx.routing_strategy == RoutingStrategy.BEDROCK_ONLY:
+            return await _stream_bedrock_only(
+                ctx, request, session, budget_service, usage_aggregate_repo
             )
-        finally:
-            if not streaming_started:
-                await plan_adapter.close()
-                if bedrock_adapter:
-                    await bedrock_adapter.close()
+
+        # Default: plan_first streaming
+        return await _stream_plan_first(
+            ctx, request, session, outgoing_headers, budget_service, usage_aggregate_repo
+        )
 
     # Setup adapters
     token_usage_repo = TokenUsageRepository(session)
@@ -273,3 +181,222 @@ async def proxy_count_tokens(
 @router.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+async def _stream_plan_first(
+    ctx,
+    request: AnthropicRequest,
+    session: AsyncSession,
+    outgoing_headers: dict[str, str],
+    budget_service: BudgetService,
+    usage_aggregate_repo: UsageAggregateRepository,
+):
+    """Stream with Plan API first, fallback to Bedrock on retryable errors."""
+    from ..proxy.context import RequestContext
+
+    plan_adapter = PlanAdapter(headers=outgoing_headers)
+    bedrock_adapter = None
+    streaming_started = False
+    try:
+        result = await plan_adapter.stream(request)
+        if isinstance(result, AdapterError):
+            should_fallback = (
+                ctx.has_bedrock_key
+                and result.retryable
+                and result.error_type in RETRYABLE_ERRORS
+            )
+            if should_fallback:
+                budget_result = await budget_service.check_budget(
+                    ctx.user_id, fail_open=False
+                )
+                if not budget_result.allowed:
+                    error_body = AnthropicError(
+                        error={
+                            "type": "rate_limit_error",
+                            "message": format_budget_exceeded_message(budget_result),
+                        },
+                        request_id=ctx.request_id,
+                    ).model_dump()
+                    return JSONResponse(content=error_body, status_code=429)
+
+                bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
+                bedrock_result = await bedrock_adapter.stream(ctx, request)
+                if isinstance(bedrock_result, AdapterError):
+                    error_body = AnthropicError(
+                        error={
+                            "type": _map_error_type(bedrock_result.error_type),
+                            "message": bedrock_result.message,
+                        },
+                        request_id=ctx.request_id,
+                    ).model_dump()
+                    return JSONResponse(
+                        content=error_body, status_code=bedrock_result.status_code
+                    )
+
+                streaming_started = True
+                streaming_start = time.time()
+                usage_recorder = UsageRecorder(
+                    TokenUsageRepository(session),
+                    usage_aggregate_repo,
+                    session_factory=async_session_factory,
+                )
+                usage_collector = StreamingUsageCollector()
+
+                async def bedrock_stream_generator():
+                    try:
+                        async for chunk in bedrock_result:
+                            usage_collector.feed(chunk)
+                            yield chunk
+                    finally:
+                        await bedrock_adapter.close()
+                        usage = usage_collector.get_usage()
+                        if usage:
+                            latency_ms = int((time.time() - streaming_start) * 1000)
+                            asyncio.create_task(
+                                usage_recorder.record_streaming_usage(
+                                    ctx,
+                                    usage,
+                                    latency_ms,
+                                    request.model,
+                                    is_fallback=True,
+                                )
+                            )
+                        else:
+                            logger.warning(
+                                "streaming_usage_missing",
+                                request_id=ctx.request_id,
+                                provider="bedrock",
+                            )
+
+                return StreamingResponse(
+                    bedrock_stream_generator(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+                )
+
+            error_body = AnthropicError(
+                error={
+                    "type": _map_error_type(result.error_type),
+                    "message": result.message,
+                },
+                request_id=ctx.request_id,
+            ).model_dump()
+            return JSONResponse(content=error_body, status_code=result.status_code)
+
+        streaming_started = True
+
+        async def stream_generator():
+            try:
+                async for chunk in result.aiter_bytes():
+                    yield chunk
+            finally:
+                await result.aclose()
+                await plan_adapter.close()
+
+        media_type = result.headers.get("content-type", "text/event-stream")
+        return StreamingResponse(
+            stream_generator(),
+            media_type=media_type,
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    finally:
+        if not streaming_started:
+            await plan_adapter.close()
+            if bedrock_adapter:
+                await bedrock_adapter.close()
+
+
+async def _stream_bedrock_only(
+    ctx,
+    request: AnthropicRequest,
+    session: AsyncSession,
+    budget_service: BudgetService,
+    usage_aggregate_repo: UsageAggregateRepository,
+):
+    """Stream directly to Bedrock, skip Plan API entirely."""
+    logger.info(
+        "streaming_bedrock_only",
+        user_id=str(ctx.user_id),
+        access_key_id=str(ctx.access_key_id),
+    )
+
+    if not ctx.has_bedrock_key:
+        error_body = AnthropicError(
+            error={
+                "type": "api_error",
+                "message": "Bedrock key not configured for bedrock_only routing",
+            },
+            request_id=ctx.request_id,
+        ).model_dump()
+        return JSONResponse(content=error_body, status_code=503)
+
+    budget_result = await budget_service.check_budget(ctx.user_id, fail_open=False)
+    if not budget_result.allowed:
+        error_body = AnthropicError(
+            error={
+                "type": "rate_limit_error",
+                "message": format_budget_exceeded_message(budget_result),
+            },
+            request_id=ctx.request_id,
+        ).model_dump()
+        return JSONResponse(content=error_body, status_code=429)
+
+    bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
+    streaming_started = False
+    try:
+        bedrock_result = await bedrock_adapter.stream(ctx, request)
+        if isinstance(bedrock_result, AdapterError):
+            error_body = AnthropicError(
+                error={
+                    "type": _map_error_type(bedrock_result.error_type),
+                    "message": bedrock_result.message,
+                },
+                request_id=ctx.request_id,
+            ).model_dump()
+            return JSONResponse(
+                content=error_body, status_code=bedrock_result.status_code
+            )
+
+        streaming_started = True
+        streaming_start = time.time()
+        usage_recorder = UsageRecorder(
+            TokenUsageRepository(session),
+            usage_aggregate_repo,
+            session_factory=async_session_factory,
+        )
+        usage_collector = StreamingUsageCollector()
+
+        async def bedrock_stream_generator():
+            try:
+                async for chunk in bedrock_result:
+                    usage_collector.feed(chunk)
+                    yield chunk
+            finally:
+                await bedrock_adapter.close()
+                usage = usage_collector.get_usage()
+                if usage:
+                    latency_ms = int((time.time() - streaming_start) * 1000)
+                    asyncio.create_task(
+                        usage_recorder.record_streaming_usage(
+                            ctx,
+                            usage,
+                            latency_ms,
+                            request.model,
+                            is_fallback=False,
+                        )
+                    )
+                else:
+                    logger.warning(
+                        "streaming_usage_missing",
+                        request_id=ctx.request_id,
+                        provider="bedrock",
+                    )
+
+        return StreamingResponse(
+            bedrock_stream_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    finally:
+        if not streaming_started:
+            await bedrock_adapter.close()

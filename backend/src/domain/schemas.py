@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -60,6 +60,7 @@ class AnthropicCountTokensResponse(BaseModel):
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
+    routing_strategy: Literal["plan_first", "bedrock_only"] = "plan_first"
     monthly_budget_usd: Decimal | None = Field(
         default=None, ge=Decimal("0.01"), le=Decimal("999999.99")
     )
@@ -70,6 +71,7 @@ class UserResponse(BaseModel):
     name: str
     description: str | None
     status: str
+    routing_strategy: str = "plan_first"
     monthly_budget_usd: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -82,6 +84,10 @@ class UserResponse(BaseModel):
         if isinstance(value, Decimal):
             return str(value)
         return value
+
+
+class UserRoutingStrategyUpdate(BaseModel):
+    routing_strategy: Literal["plan_first", "bedrock_only"]
 
 
 class UserBudgetUpdate(BaseModel):

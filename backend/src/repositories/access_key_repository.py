@@ -40,7 +40,10 @@ class AccessKeyRepository:
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
-    async def get_by_hash_with_user(self, key_hash: str) -> tuple[AccessKey, UUID] | None:
+    async def get_by_hash_with_user(
+        self, key_hash: str
+    ) -> tuple[AccessKey, UUID, str] | None:
+        """Returns (access_key, user_id, routing_strategy) or None."""
         now = datetime.utcnow()
         result = await self.session.execute(
             select(AccessKeyModel)
@@ -62,7 +65,7 @@ class AccessKeyRepository:
         model = result.scalar_one_or_none()
         if not model or model.user.status != "active":
             return None
-        return self._to_entity(model), model.user_id
+        return self._to_entity(model), model.user_id, model.user.routing_strategy
 
     async def get_by_id(self, key_id: UUID) -> AccessKey | None:
         result = await self.session.execute(

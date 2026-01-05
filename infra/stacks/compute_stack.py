@@ -199,7 +199,6 @@ class ComputeStack(Stack):
             - bedrock_default_model: Default Bedrock model (optional)
 
         Usage:
-            cdk deploy --context plan_force_rate_limit=true
             cdk deploy --context environment=prod --context log_level=DEBUG
         """
         env = {
@@ -213,9 +212,6 @@ class ComputeStack(Stack):
         }
 
         # Optional context-based environment variables
-        if plan_force_rate_limit := self.node.try_get_context("plan_force_rate_limit"):
-            env["PROXY_PLAN_FORCE_RATE_LIMIT"] = str(plan_force_rate_limit).lower()
-
         if plan_api_key := self.node.try_get_context("plan_api_key"):
             env["PROXY_PLAN_API_KEY"] = plan_api_key
 

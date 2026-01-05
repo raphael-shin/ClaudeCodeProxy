@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from ..domain import RoutingStrategy
+
 
 @dataclass
 class RequestContext:
@@ -13,3 +15,4 @@ class RequestContext:
     bedrock_region: str
     bedrock_model: str
     has_bedrock_key: bool
+    routing_strategy: RoutingStrategy = RoutingStrategy.PLAN_FIRST

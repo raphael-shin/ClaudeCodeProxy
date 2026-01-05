@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from collections.abc import Awaitable, Callable
 
-from ..domain import AnthropicRequest, AnthropicResponse, AnthropicUsage, RETRYABLE_ERRORS, ErrorType
+from ..domain import AnthropicRequest, AnthropicResponse, AnthropicUsage, RETRYABLE_ERRORS, ErrorType, RoutingStrategy
 from ..logging import get_logger
 from .context import RequestContext
 from .budget import BudgetCheckResult, format_budget_exceeded_message
@@ -60,6 +60,17 @@ class ProxyRouter:
     async def route(
         self, ctx: RequestContext, request: AnthropicRequest
     ) -> ProxyResponse:
+        # Route based on user's routing strategy
+        if ctx.routing_strategy == RoutingStrategy.BEDROCK_ONLY:
+            return await self._route_bedrock_only(ctx, request)
+
+        # Default: plan_first
+        return await self._route_plan_first(ctx, request)
+
+    async def _route_plan_first(
+        self, ctx: RequestContext, request: AnthropicRequest
+    ) -> ProxyResponse:
+        """Plan API first, fallback to Bedrock on retryable errors."""
         key_id = str(ctx.access_key_id)
         cb = get_proxy_deps().circuit_breaker
         plan_attempted = False
@@ -111,6 +122,49 @@ class ProxyRouter:
             error_type="overloaded_error",
             error_message="Service unavailable and no fallback configured",
         )
+
+    async def _route_bedrock_only(
+        self, ctx: RequestContext, request: AnthropicRequest
+    ) -> ProxyResponse:
+        """Bedrock only, skip Plan API entirely."""
+        logger.info(
+            "routing_bedrock_only",
+            user_id=str(ctx.user_id),
+            access_key_id=str(ctx.access_key_id),
+        )
+
+        if not ctx.has_bedrock_key:
+            return ProxyResponse(
+                success=False,
+                response=None,
+                usage=None,
+                provider="bedrock",
+                is_fallback=False,
+                status_code=503,
+                error_type="api_error",
+                error_message="Bedrock key not configured for bedrock_only routing",
+            )
+
+        if self._budget_checker:
+            budget_result = await self._budget_checker(ctx)
+            if not budget_result.allowed:
+                return ProxyResponse(
+                    success=False,
+                    response=None,
+                    usage=None,
+                    provider="bedrock",
+                    is_fallback=False,
+                    status_code=429,
+                    error_type="rate_limit_error",
+                    error_message=format_budget_exceeded_message(budget_result),
+                )
+
+        result = await self._bedrock.invoke(ctx, request)
+
+        if isinstance(result, AdapterResponse):
+            return self._success_response("bedrock", result, is_fallback=False)
+
+        return self._error_response("bedrock", result, is_fallback=False)
 
     def _success_response(
         self, provider: str, result: AdapterResponse, is_fallback: bool
