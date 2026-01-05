@@ -113,15 +113,7 @@ class ComputeStack(Stack):
             task_image_options=ecs_patterns.ApplicationLoadBalancedTaskImageOptions(
                 image=ecs.ContainerImage.from_docker_image_asset(image_asset),
                 container_port=8000,
-                environment={
-                    "ENVIRONMENT": "dev",
-                    "LOG_LEVEL": "INFO",
-                    "PROXY_KMS_KEY_ID": kms_key.key_id,
-                    "PROXY_DATABASE_URL_ARN": db_secret.secret_arn,
-                    "PROXY_KEY_HASHER_SECRET_ARN": secrets.key_hasher_secret.secret_arn,
-                    "PROXY_JWT_SECRET_ARN": secrets.jwt_secret.secret_arn,
-                    "PROXY_ADMIN_CREDENTIALS_ARN": secrets.admin_credentials.secret_arn,
-                },
+                environment=self._build_environment(kms_key, db_secret, secrets),
                 execution_role=execution_role,
                 task_role=task_role,
                 log_driver=ecs.LogDrivers.aws_logs(
@@ -189,3 +181,48 @@ class ComputeStack(Stack):
             value=self.origin_verify_secret.secret_arn,
             description="Origin Verify Secret ARN for CloudFront configuration",
         )
+
+    def _build_environment(
+        self,
+        kms_key: kms.Key,
+        db_secret: secretsmanager.ISecret,
+        secrets,
+    ) -> dict[str, str]:
+        """Build environment variables for the ECS task.
+
+        Supports CDK context variables for optional configuration:
+            - environment: Deployment environment (default: "dev")
+            - log_level: Log level (default: "INFO")
+            - plan_force_rate_limit: Force rate limiting on Plan API (default: "false")
+            - plan_api_key: Anthropic API key (optional)
+            - bedrock_region: Bedrock region (optional)
+            - bedrock_default_model: Default Bedrock model (optional)
+
+        Usage:
+            cdk deploy --context plan_force_rate_limit=true
+            cdk deploy --context environment=prod --context log_level=DEBUG
+        """
+        env = {
+            "ENVIRONMENT": self.node.try_get_context("environment") or "dev",
+            "LOG_LEVEL": self.node.try_get_context("log_level") or "INFO",
+            "PROXY_KMS_KEY_ID": kms_key.key_id,
+            "PROXY_DATABASE_URL_ARN": db_secret.secret_arn,
+            "PROXY_KEY_HASHER_SECRET_ARN": secrets.key_hasher_secret.secret_arn,
+            "PROXY_JWT_SECRET_ARN": secrets.jwt_secret.secret_arn,
+            "PROXY_ADMIN_CREDENTIALS_ARN": secrets.admin_credentials.secret_arn,
+        }
+
+        # Optional context-based environment variables
+        if plan_force_rate_limit := self.node.try_get_context("plan_force_rate_limit"):
+            env["PROXY_PLAN_FORCE_RATE_LIMIT"] = str(plan_force_rate_limit).lower()
+
+        if plan_api_key := self.node.try_get_context("plan_api_key"):
+            env["PROXY_PLAN_API_KEY"] = plan_api_key
+
+        if bedrock_region := self.node.try_get_context("bedrock_region"):
+            env["PROXY_BEDROCK_REGION"] = bedrock_region
+
+        if bedrock_default_model := self.node.try_get_context("bedrock_default_model"):
+            env["PROXY_BEDROCK_DEFAULT_MODEL"] = bedrock_default_model
+
+        return env

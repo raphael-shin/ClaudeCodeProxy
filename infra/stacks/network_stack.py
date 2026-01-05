@@ -23,26 +23,27 @@ class NetworkStack(Stack):
             ],
         )
 
-        # Separate ALB security group makes it easier to lock ingress to CloudFront.
+        # Separate ALB security group.
+        # Note: CloudFront prefix list (pl-22a6434b) exceeds default SG rule limit (~130 rules).
+        # Security is enforced via X-Origin-Verify header validation in ComputeStack.
+        # To use prefix list, increase "Inbound rules per security group" quota to 200+.
         self.alb_sg = ec2.SecurityGroup(
             self,
             "AlbSg",
             vpc=self.vpc,
-            description="ALB Security Group - CloudFront Prefix List only",
+            description="ALB Security Group - Protected by X-Origin-Verify header",
         )
 
-        # Use the AWS-managed CloudFront prefix list to block direct public access.
-        cloudfront_prefix_list_id = ec2.Peer.prefix_list("pl-22a6434b")  # ap-northeast-2
-
+        # Allow HTTP/HTTPS from anywhere (security enforced by X-Origin-Verify header)
         self.alb_sg.add_ingress_rule(
-            cloudfront_prefix_list_id,
+            ec2.Peer.any_ipv4(),
             ec2.Port.tcp(443),
-            "HTTPS from CloudFront only",
+            "HTTPS (protected by X-Origin-Verify header)",
         )
         self.alb_sg.add_ingress_rule(
-            cloudfront_prefix_list_id,
+            ec2.Peer.any_ipv4(),
             ec2.Port.tcp(80),
-            "HTTP from CloudFront only",
+            "HTTP (protected by X-Origin-Verify header)",
         )
 
         self.ecs_sg = ec2.SecurityGroup(self, "EcsSg", vpc=self.vpc)

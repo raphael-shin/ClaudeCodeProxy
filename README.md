@@ -10,6 +10,7 @@ Claude Code offers two pricing models: a fixed monthly subscription (Plan) or pa
 - **Pay-per-use pricing**: No upfront commitment or bulk subscription required — pay only for what you use via Amazon Bedrock
 - **Flexible fallback**: Use Anthropic Plan as primary, automatically switch to Bedrock when rate-limited
 - **Usage visibility**: Track token consumption per user with detailed analytics
+- **Budget control**: Set monthly spending limits per user to prevent unexpected costs
 
 ### Enterprise Security & Compliance
 - **Data privacy**: When using Amazon Bedrock, your data is never used for model training
@@ -133,6 +134,29 @@ npm run dev
 - Cost visibility dashboard with total cost, cache cost, model breakdown, and cost trend (KST-based ranges)
 - Create users and issue access keys (keys are shown once on creation)
 - Register Bedrock credentials per access key and see linked status in the list
+- User budget management with real-time usage tracking
+
+### User Budget Management
+
+Set monthly spending limits per user to control Bedrock costs:
+
+- **Monthly Budget**: Set a USD limit per user (e.g., $50/month). Leave empty for unlimited.
+- **Automatic Enforcement**: When budget is exceeded, Bedrock fallback requests are blocked with a 429 response
+- **Real-time Tracking**: View current usage, remaining budget, and usage percentage in the dashboard
+- **KST-based Cycle**: Monthly budget resets on the 1st of each month (Korea Standard Time, UTC+9)
+
+Budget enforcement only applies to Bedrock fallback requests. Anthropic Plan API requests are not affected by user budgets.
+
+Example budget response when exceeded:
+```json
+{
+  "type": "error",
+  "error": {
+    "type": "rate_limit_error",
+    "message": "Monthly budget exceeded: $50.00 used of $50.00 budget"
+  }
+}
+```
 
 ### Cost Visibility & Pricing
 
@@ -221,6 +245,9 @@ Option B — Manual upload via Amplify Console:
 | `PROXY_BEDROCK_DEFAULT_MODEL` | No | Default Bedrock model ID |
 | `PROXY_BEDROCK_REGION` | No | AWS region for Bedrock (default: ap-northeast-2) |
 | `PROXY_MODEL_PRICING` | No | JSON pricing config for cost visibility (per region/model) |
+| `PROXY_LOCAL_ENCRYPTION_KEY` | No | 32-byte key for local dev encryption (KMS fallback) |
+| `PROXY_CIRCUIT_FAILURE_THRESHOLD` | No | Failures before circuit opens (default: 3) |
+| `PROXY_CIRCUIT_RESET_TIMEOUT` | No | Circuit reset timeout in seconds (default: 1800) |
 
 ## Tech Stack
 
