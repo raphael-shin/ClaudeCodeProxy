@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from ..config import get_settings
@@ -36,7 +36,7 @@ class CircuitBreaker:
 
         if state.state == CircuitState.OPEN:
             # Check if should transition to half-open
-            if state.opened_at and datetime.utcnow() > state.opened_at + timedelta(
+            if state.opened_at and datetime.now(timezone.utc) > state.opened_at + timedelta(
                 seconds=self.reset_timeout
             ):
                 state.state = CircuitState.HALF_OPEN
@@ -58,7 +58,7 @@ class CircuitBreaker:
         if error_type not in CIRCUIT_TRIGGERS:
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         state = self._states.get(key_id)
 
         if not state:

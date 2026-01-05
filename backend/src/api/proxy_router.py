@@ -89,7 +89,9 @@ async def proxy_messages(
                     and result.error_type in RETRYABLE_ERRORS
                 )
                 if should_fallback:
-                    budget_result = await budget_service.check_budget(ctx.user_id)
+                    budget_result = await budget_service.check_budget(
+                        ctx.user_id, fail_open=False
+                    )
                     if not budget_result.allowed:
                         error_body = AnthropicError(
                             error={
@@ -185,7 +187,7 @@ async def proxy_messages(
     bedrock_adapter = BedrockAdapter(BedrockKeyRepository(session))
 
     async def _budget_checker(ctx):
-        return await budget_service.check_budget(ctx.user_id)
+        return await budget_service.check_budget(ctx.user_id, fail_open=False)
 
     proxy_router = ProxyRouter(
         plan_adapter,
