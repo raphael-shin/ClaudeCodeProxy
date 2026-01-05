@@ -33,14 +33,23 @@ class UserRepository:
         return self._to_entity(model)
 
     async def get_by_id(self, user_id: UUID) -> User | None:
-        result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))
+        result = await self.session.execute(
+            select(UserModel).where(
+                UserModel.id == user_id,
+                UserModel.deleted_at.is_(None),
+                UserModel.status != UserStatus.DELETED.value,
+            )
+        )
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
     async def list_active(self, limit: int = 100, offset: int = 0) -> list[User]:
         result = await self.session.execute(
             select(UserModel)
-            .where(UserModel.status != UserStatus.DELETED.value)
+            .where(
+                UserModel.deleted_at.is_(None),
+                UserModel.status != UserStatus.DELETED.value,
+            )
             .order_by(UserModel.created_at.desc())
             .limit(limit)
             .offset(offset)

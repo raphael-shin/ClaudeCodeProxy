@@ -27,6 +27,8 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deletingUsers, setDeletingUsers] = useState<Record<string, boolean>>({});
   const [budgetsByUser, setBudgetsByUser] = useState<Record<string, UserBudgetStatus>>(
     {}
   );
@@ -115,6 +117,35 @@ export default function UsersPage() {
     setDescription('');
     setMonthlyBudget('');
     setShowForm(false);
+  };
+
+  const handleDelete = async (user: User) => {
+    if (deletingUsers[user.id]) return;
+    const confirmed = window.confirm(
+      `Delete ${user.name}? This will revoke all access keys.`
+    );
+    if (!confirmed) return;
+    setDeleteError('');
+    setDeletingUsers((prev) => ({ ...prev, [user.id]: true }));
+    try {
+      await api.deleteUser(user.id);
+      setUsers((prev) => prev.filter((item) => item.id !== user.id));
+      setBudgetsByUser((prev) => {
+        if (!(user.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[user.id];
+        return next;
+      });
+    } catch {
+      setDeleteError('Failed to delete user.');
+    } finally {
+      setDeletingUsers((prev) => {
+        if (!(user.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[user.id];
+        return next;
+      });
+    }
   };
 
   return (
@@ -219,6 +250,9 @@ export default function UsersPage() {
         <div className="border-b border-line px-6 py-4 text-sm font-semibold text-ink">
           {isLoading ? 'Loading users...' : `${users.length} users`}
         </div>
+        {deleteError && (
+          <div className="px-6 pb-4 text-sm text-danger">{deleteError}</div>
+        )}
         {users.length === 0 && !isLoading ? (
           <div className="px-6 py-12 text-center text-sm text-muted">
             No users yet. Create your first user to get started.
@@ -237,6 +271,7 @@ export default function UsersPage() {
             <tbody>
               {users.map((user) => {
                 const budgetStatus = budgetsByUser[user.id];
+                const isDeleting = Boolean(deletingUsers[user.id]);
                 return (
                   <tr key={user.id} className="border-t border-line/60 hover:bg-surface-2">
                     <td className="px-6 py-4">
@@ -283,12 +318,22 @@ export default function UsersPage() {
                       {formatDate(user.updated_at)}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Link
-                        to={`/users/${user.id}`}
-                        className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-2"
-                      >
-                        View
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(user)}
+                          disabled={isDeleting}
+                          className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-danger transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isDeleting ? 'Deleting...' : 'Delete'}
+                        </button>
+                        <Link
+                          to={`/users/${user.id}`}
+                          className="rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-2"
+                        >
+                          View
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

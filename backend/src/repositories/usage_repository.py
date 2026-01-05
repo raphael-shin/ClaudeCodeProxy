@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
 from ..db.models import TokenUsageModel, UsageAggregateModel, UserModel
-from ..domain import TokenUsage, UsageAggregate
+from ..domain import TokenUsage, UsageAggregate, UserStatus
 
 
 class TokenUsageRepository:
@@ -370,6 +370,8 @@ class UsageAggregateRepository:
                 UsageAggregateModel.bucket_type == bucket_type,
                 UsageAggregateModel.bucket_start >= start_time,
                 UsageAggregateModel.bucket_start < end_time,
+                UserModel.deleted_at.is_(None),
+                UserModel.status != UserStatus.DELETED.value,
             )
             .group_by(UsageAggregateModel.user_id, UserModel.name)
             .order_by(desc(func.sum(UsageAggregateModel.total_tokens)))
