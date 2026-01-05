@@ -3,8 +3,22 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..domain import UserCreate, UserResponse, UserStatus, UserBudgetUpdate, UserBudgetResponse, UserRoutingStrategyUpdate, RoutingStrategy
-from ..repositories import UserRepository, AccessKeyRepository, UsageAggregateRepository
+from ..domain import (
+    UserCreate,
+    UserResponse,
+    UserStatus,
+    UserBudgetUpdate,
+    UserBudgetResponse,
+    UserRoutingStrategyUpdate,
+    RoutingStrategy,
+    KeyStatus,
+)
+from ..repositories import (
+    UserRepository,
+    AccessKeyRepository,
+    UsageAggregateRepository,
+    BedrockKeyRepository,
+)
 from ..proxy import invalidate_access_key_cache, BudgetService, BudgetCheckResult, invalidate_budget_cache
 from .deps import require_admin
 
@@ -25,6 +39,28 @@ def _build_budget_response(user_id: UUID, result: BudgetCheckResult) -> UserBudg
     )
 
 
+async def _ensure_bedrock_keys_for_routing(
+    user_id: UUID,
+    key_repo: AccessKeyRepository,
+    bedrock_repo: BedrockKeyRepository,
+) -> None:
+    keys = await key_repo.list_by_user(user_id)
+    valid_keys = [
+        key for key in keys if key.status in (KeyStatus.ACTIVE, KeyStatus.ROTATING)
+    ]
+    if not valid_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="Bedrock key required before enabling bedrock_only routing",
+        )
+    bedrock_ids = await bedrock_repo.list_access_key_ids([key.id for key in valid_keys])
+    if any(key.id not in bedrock_ids for key in valid_keys):
+        raise HTTPException(
+            status_code=400,
+            detail="Bedrock key required for all active access keys before enabling bedrock_only routing",
+        )
+
+
 @router.get("", response_model=list[UserResponse])
 async def list_users(
     limit: int = 100,
@@ -41,6 +77,11 @@ async def create_user(
     data: UserCreate,
     session: AsyncSession = Depends(get_session),
 ):
+    if data.routing_strategy == RoutingStrategy.BEDROCK_ONLY.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Bedrock key required before enabling bedrock_only routing",
+        )
     repo = UserRepository(session)
     user = await repo.create(
         name=data.name,
@@ -167,14 +208,17 @@ async def update_user_routing_strategy(
 ):
     user_repo = UserRepository(session)
     key_repo = AccessKeyRepository(session)
+    bedrock_repo = BedrockKeyRepository(session)
 
     user = await user_repo.get_by_id(user_id)
     if not user or user.status == UserStatus.DELETED:
         raise HTTPException(status_code=404, detail="User not found")
 
-    updated = await user_repo.update_routing_strategy(
-        user_id, RoutingStrategy(data.routing_strategy)
-    )
+    routing_strategy = RoutingStrategy(data.routing_strategy)
+    if routing_strategy == RoutingStrategy.BEDROCK_ONLY:
+        await _ensure_bedrock_keys_for_routing(user_id, key_repo, bedrock_repo)
+
+    updated = await user_repo.update_routing_strategy(user_id, routing_strategy)
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
 

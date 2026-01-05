@@ -6,7 +6,7 @@ from src.proxy.router import ProxyRouter
 from src.proxy.adapter_base import Adapter, AdapterResponse, AdapterError
 from src.proxy.context import RequestContext
 from src.proxy.dependencies import ProxyDependencies, set_proxy_deps
-from src.domain import AnthropicRequest, ErrorType, RETRYABLE_ERRORS
+from src.domain import AnthropicRequest, ErrorType, RETRYABLE_ERRORS, RoutingStrategy
 from src.proxy.circuit_breaker import CircuitBreaker
 
 @pytest.fixture
@@ -35,8 +35,10 @@ def proxy_router(mock_plan_adapter, mock_bedrock_adapter):
 @pytest.fixture
 def request_context():
     ctx = Mock(spec=RequestContext)
+    ctx.user_id = uuid4()
     ctx.access_key_id = uuid4()
     ctx.has_bedrock_key = True # Default to having a key
+    ctx.routing_strategy = RoutingStrategy.PLAN_FIRST
     return ctx
 
 @pytest.fixture
@@ -151,3 +153,34 @@ async def test_circuit_open_bedrock_success(proxy_router, request_context, anthr
     assert response.is_fallback is False # Important: Plan was NOT attempted
     mock_plan_adapter.invoke.assert_not_called()
     mock_bedrock_adapter.invoke.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_bedrock_only_routes_directly_to_bedrock(proxy_router, request_context, anthropic_request, mock_plan_adapter, mock_bedrock_adapter):
+    """bedrock_only → Bedrock만 호출"""
+    request_context.routing_strategy = RoutingStrategy.BEDROCK_ONLY
+    request_context.has_bedrock_key = True
+    mock_bedrock_adapter.invoke.return_value = AdapterResponse(
+        response=Mock(), usage=Mock()
+    )
+
+    response = await proxy_router.route(request_context, anthropic_request)
+
+    assert response.success is True
+    assert response.provider == "bedrock"
+    assert response.is_fallback is False
+    mock_plan_adapter.invoke.assert_not_called()
+    mock_bedrock_adapter.invoke.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_bedrock_only_without_key_returns_503(proxy_router, request_context, anthropic_request, mock_plan_adapter, mock_bedrock_adapter):
+    """bedrock_only + Bedrock key 없음 → 503"""
+    request_context.routing_strategy = RoutingStrategy.BEDROCK_ONLY
+    request_context.has_bedrock_key = False
+
+    response = await proxy_router.route(request_context, anthropic_request)
+
+    assert response.success is False
+    assert response.status_code == 503
+    assert response.error_type == "api_error"
+    mock_plan_adapter.invoke.assert_not_called()
+    mock_bedrock_adapter.invoke.assert_not_called()
